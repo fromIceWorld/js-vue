@@ -1,91 +1,150 @@
-## parse
+## initData
 
-概述：对模板的解析，以·<·为标志，用正则进行匹配，当以·<·开头，可能是注释、条件注释、Doctype、结束标签、开始标签；当以·<·开头与以上模式都不匹配，则为文本内的‘<’。
-
-
+在 new Vue 的过程中，有一步initData过程是将data数据变为可观察数据。
 
 ```javascript
-let textEnd = html.indexOf('<')
+function initData (vm: Component) {
+  let data = vm.$options.data
+  data = vm._data = typeof data === 'function'
+    ? getData(data, vm)
+    : data || {}
+  if (!isPlainObject(data)) {
+    data = {}
+    process.env.NODE_ENV !== 'production' && warn(
+      'data functions should return an object:\n' +
+      'https://vuejs.org/v2/guide/components.html#data-Must-Be-a-Function',
+      vm
+    )
+  }
+  // proxy data on instance
+  const keys = Object.keys(data)
+  const props = vm.$options.props
+  const methods = vm.$options.methods
+  let i = keys.length
+  while (i--) {
+    const key = keys[i]
+    if (process.env.NODE_ENV !== 'production') {
+      if (methods && hasOwn(methods, key)) {
+        warn(
+          `Method "${key}" has already been defined as a data property.`,
+          vm
+        )
+      }
+    }
+    if (props && hasOwn(props, key)) {
+      process.env.NODE_ENV !== 'production' && warn(
+        `The data property "${key}" is already declared as a prop. ` +
+        `Use prop default value instead.`,
+        vm
+      )
+    } else if (!isReserved(key)) {
+      proxy(vm, `_data`, key)
+    }
+  }
+  // observe data
+  observe(data, true /* asRootData */)
+}
+##---流程拆分
+1-在initData中获取 $options中的data数据，但是我们在mergeOptions中对data进行了合并，$options.data返回的是一个函数。所以要用genData去获取数据。然后将获取的数据(对象)赋值给 vm._data.
+
+2-之后又对data的类型进行判断，data需要是一个object
+
+3-将 _data 中的值代理到vm上
+
+4-将data变成观察者observer（data, true）
 ```
 
-1-判断非<script> / <style>标签
+**observer**(data, true)
 
-​	以 ‘<’ 开头的 可能是 ：
-
-​		 注释  ：    <!-- 。。。 -->
-
-​		 开始标签 ： <div>
-
-​		 闭合标签 :  </div>
-
-​		 doctype  : <!DOCTYPE HTML>
-
-       条件注释 : 
-          <![IE]>
-            <link rel="stylesheet" type="text/css" href="all-ie-only.css" />
-          <![endif]>
-①普通注释：
-
-​	对于普通的注释，通过配置（shouldKeepComment）决定是否保存，保存的话，创建一个type为3的注释节点
-
-```
-const child = {
-          type: 3,
-          text,
-          isComment: true
-        }
-将child 放入currentParent中;
-```
-
-②条件注释：
-
-​	直接 advance(commentEnd + 3) 截取掉
-
- ③ Doctype：
-
- 	直接 doctypeMatch[0].length 截取掉
-
- ④闭合标签：
-
-​		获取tagName， 在 stack 中从后向前找到对应的tag，
-
-​		stack中后续的tag删除（删除一些未闭合标签<div><span></div>）
-
-​		更新lastTag = stack[stack.length-1].tag 
-
-​		- 对于一元标签</br> <p>
-
- ⑤ 开始标签:
-
-​		创建 match对象存放数据
-
-```
-parseStartTag:
-    const match = {
-            tagName: start[1],
-            attrs: [],
-            start: index
-          }
-循环进行属性解析,将解析结果放入match.attrs,直到匹配到《开始标签的结束》
-
-handleStartTag:
-
-处理match中的attrs解析结果,设置为{name:'class',value:'color'}，key/value形式
-如果非闭合，将当前节点入栈,更新lastTag属性；stack.push(match);lastTag = tagName;
-如果是自闭合标签，调用钩子函数start，创建节点，更新currentParent，将节点入栈
+```javascript
+export function observe (value: any, asRootData: ?boolean): Observer | void {
+  if (!isObject(value) || value instanceof VNode) {
+    return
+  }
+  let ob: Observer | void
+  if (hasOwn(value, '__ob__') && value.__ob__ instanceof Observer) {
+    ob = value.__ob__
+  } else if (
+    shouldObserve &&
+    !isServerRendering() &&
+    (Array.isArray(value) || isPlainObject(value)) &&
+    Object.isExtensible(value) &&
+    !value._isVue
+  ) {
+    ob = new Observer(value)
+  }
+  if (asRootData && ob) {
+    ob.vmCount++
+  }
+  return ob
+}
+##
+1-data需要是object 而且不能是vnode的实例【这个还不太懂】
+2-当data有 __ob__属性的话，整明data已经被observe，只需要将data.__ob__返回，避免重复观察。
+3-当满足
+	shouldObserve &&                                   //开关，在initProps时已开启
+    !isServerRendering() &&                            //非服务端渲染？？？？
+    (Array.isArray(value) || isPlainObject(value)) &&  //data是对象或者数组？？？？
+    Object.isExtensible(value) &&                      //data可扩展
+    !value._isVue                                      //data._isVue 为空或者为false ？？？？
+	以上五个条件时才对数据进行观察。
+    
+ob = new Observer(value)
 ```
 
-⑥文本：
+**ob = new Observer( value )**
 
-​	如果textEnd>=0,又不是开始标签 / 闭合标签 / 注释 / 条件注释，必定是文本，直接循环匹配，直到遇到
+```javascript
+export class Observer {
+  value: any;
+  dep: Dep;
+  vmCount: number; // number of vms that have this object as root $data
 
-开始标签 / 闭合标签 / 注释 / 条件注释；最后获取文本的长度截取字符串：text = html.substring(0, textEnd)；
+  constructor (value: any) {
+    this.value = value
+    this.dep = new Dep()
+    this.vmCount = 0
+    def(value, '__ob__', this)
+    if (Array.isArray(value)) {
+      if (hasProto) {
+        protoAugment(value, arrayMethods)
+      } else {
+        copyAugment(value, arrayMethods, arrayKeys)
+      }
+      this.observeArray(value)
+    } else {
+      this.walk(value)
+    }
+  }
 
-对于文本分为两种（1-有分隔符的动态文本；2-纯文本）==：
+  /**
+   * Walk through all properties and convert them into
+   * getter/setters. This method should only be called when
+   * value type is Object.
+   */
+  walk (obj: Object) {
+    const keys = Object.keys(obj)
+    for (let i = 0; i < keys.length; i++) {
+      defineReactive(obj, keys[i])
+    }
+  }
 
-​	1-将解析出的动态字符和普通字符进行拼接输出：' _s(${exp}) ' + 'text' + ' _s(${exp})' ,并输出绑定的数据
+  /**
+   * Observe a list of Array items.
+   */
+  observeArray (items: Array<any>) {
+    for (let i = 0, l = items.length; i < l; i++) {
+      observe(items[i])
+    }
+  }
+}
+## -- ob实例化属性
+ob.value = data
+ob.dep = new Dep()
+def(data, '__ob__', this) [data.__ob__ = ob 将__ob__属性设置为不可枚举，防止重复观察]
 
-【{'@binding' : exp},{'@binding' : exp}】
-
-​	
+-- 数组劫持
+当data是数组而且对象有__proto__属性时，将数组原型放到data原型上，但是在数组方法上做了一层拦截。
+当 使用 push / unshift / splice 传递第三个参数 这些对数组数据进行改变或者新增数组数据的操作时，将会对新增/修改的数据进行观察。然后再 ob.dep.notify() 让依赖进行更新。
+```
 

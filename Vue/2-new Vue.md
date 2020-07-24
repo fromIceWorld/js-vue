@@ -147,5 +147,18 @@ watch=》
 
 data=》
 单独分析
+
+## 以上详细分析在代码中，在初始化完毕后，是挂载阶段
+```
+
+**挂载**
+
+```javascript
+if (vm.$options.el) {
+      vm.$mount(vm.$options.el)
+    }
+## $mount 函数是在Vue的原型上（src\platforms\web\entry-runtime-with-compiler.js）
+
+
 ```
 
