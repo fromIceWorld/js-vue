@@ -559,7 +559,25 @@ name:'muted'属性,el.props=[{name:'muted',value:true}]
 1-preTransforms 是对  input 标签的解析
 
 ```javascript
-
+只对动态type进行置换:v-bind:type='type1'  :type='type1'  v-bind={type:'type1'}
+对于 input 类型 checkbox / radio 进行特殊处理，其他的是一类处理，这样支持切换input类型,
+ifConditionExtra:节点自身的if条件
+el:{
+    ifCondition:[
+       {//checkbox
+           exp:`(${typeBinding})==='checkbox'` + ifConditionExtra,
+           block:branch0 [type是checkbox的节点]
+       },
+        {//radio
+           exp:`(${typeBinding})==='radio'` + ifConditionExtra,
+           block:branch1 [type是radio的节点]
+       },
+        {//其他类型
+           exp:`(${typeBinding})==='其他'` + ifConditionExtra,
+           block:branch1 [type是`其他`的节点]
+       }
+    ]
+}    
 ```
 
 **transforms**
