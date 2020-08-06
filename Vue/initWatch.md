@@ -1,0 +1,249 @@
+**initWatch(vm, watch)**
+
+初始化 options中的 watch 属性。
+
+```javascript
+function initWatch (vm: Component, watch: Object) {
+  for (const key in watch) {
+    const handler = watch[key]
+    if (Array.isArray(handler)) {
+      for (let i = 0; i < handler.length; i++) {
+        createWatcher(vm, key, handler[i])
+      }
+    } else {
+      createWatcher(vm, key, handler)
+    }
+  }
+}
+1-在初始化watch属性时,对每一个watch中的 key 对应的描述信息进行处理,因为我们的watch允许我们输入多样性的	   handler(string,array,object,function)。
+2-最后对 key, handler, options 进行处理(用我们的vm.$watch函数) 
+  vm.$watch(expOrFn, handler, options)
+```
+
+**createWatcher(vm, key, handler)**
+
+```javascript
+function createWatcher (
+  vm: Component,
+  expOrFn: string | Function,
+  handler: any,
+  options?: Object
+) {
+  if (isPlainObject(handler)) {
+    options = handler
+    handler = handler.handler
+  }
+  if (typeof handler === 'string') {
+    handler = vm[handler]
+  }
+  return vm.$watch(expOrFn, handler, options)
+}
+```
+
+**Vue.prototype.$watch**
+
+```javascript
+    Vue.prototype.$watch = function (
+      expOrFn,
+      cb,
+      options
+    ) {
+      var vm = this;
+      if (isPlainObject(cb)) {
+        return createWatcher(vm, expOrFn, cb, options)
+      }
+      options = options || {};
+      options.user = true;
+      var watcher = new Watcher(vm, expOrFn, cb, options);
+      if (options.immediate) {
+        try {
+          cb.call(vm, watcher.value);
+        } catch (error) {
+          handleError(error, vm, ("callback for immediate watcher \"" + (watcher.expression) + "\""));
+        }
+      }
+      return function unwatchFn () {
+        watcher.teardown();
+      }
+    };
+  }  
+1-对于$watch 中 的参数cb(createWatcher对于key对应的值的处理结果),
+    -如果是对象,说明对应key的值是下面的e情况,会逐级向下寻找handler
+	-在调用this.$watch('key',{handler})方法时同样也传入对象,
+2-因为我们调用的 watcher 是watch属性,是用户定义的,所以添加标记options.user = true;
+3-然后实例化watcher,传入我们watch属性的独有配置options,
+	-options ={
+        immediate:'',
+        deep:'',
+        user:''
+    }
+    -var watcher = new Watcher(vm, expOrFn, cb, options);
+4- 如果用户传入immediate,运行回调函数cb传入我们的值watcher.value。
+```
+
+**Watcher构造函数**
+
+由于我们的watcher构造函数,被运用于三种watcher,我们的computedWatcher只走其中的一部分,因此简化为
+
+```javascript
+  var Watcher = function Watcher (
+    vm,              //实例
+    expOrFn,         //监听的对象
+    cb,              //回调函数
+    options,         { immediate:'',deep:'', user:true }
+    isRenderWatcher  //未传
+  ) {
+    this.vm = vm;
+    vm._watchers.push(this);
+    this.user = options.user; // true
+    this.cb = cb;             //回调函数
+    this.id = ++uid$1;        // uid for batching
+    this.active = true;
+    this.deps = [];
+    this.newDeps = [];
+    this.depIds = new _Set();
+    this.newDepIds = new _Set();
+    this.expression =  expOrFn.toString();
+	this.getter = parsePath(expOrFn);
+      if (!this.getter) {
+        this.getter = noop;
+         warn(
+          "Failed watching path: \"" + expOrFn + "\" " +
+          'Watcher only accepts simple dot-delimited paths. ' +
+          'For full control, use a function instead.',
+          vm
+        );
+      }    
+    this.value = this.get()
+  };
+1-将我们的watcher实例存入vm._watchers里。
+2-由于我们的watch 监听的数据可能属于多层,因此需要对key做解析,最后对于key解析后返回一个函数赋值给getter
+3-运行this.value = this.get()
+```
+
+**Watcher.prototype.get**
+
+```javascript
+  Watcher.prototype.get = function get () {
+    pushTarget(this);
+    var value;
+    var vm = this.vm;
+    try {
+      value = this.getter.call(vm, vm);
+    } catch (e) {
+      if (this.user) {
+        handleError(e, vm, ("getter for watcher \"" + (this.expression) + "\""));
+      } else {
+        throw e
+      }
+    } finally {
+      // "touch" every property so they are all tracked as
+      // dependencies for deep watching
+      if (this.deep) {
+        traverse(value);
+      }
+      popTarget();
+      this.cleanupDeps();
+    }
+    return value
+  };
+1- 将根据watch的key以及对应属性生成的watcher实例入栈
+2- 运行this.getter,
+    ~ this.getter是我们对watch中的key进行解析后生成的一个包装函数
+	~ 从vm上一层一层的获取值,在获取值的过程中,因为数据已经是响应式的，所以会将userWatch收集.
+	~ 当我们的key值变动时会通知我们的watcher进行更新(关于dep，watcher，data的依赖相互收集的过程，之后单独解析。)
+3- 当我们传入deep属性时,会运行traverse(value)对我们的key进行深层监听。
+```
+
+**traverse**
+
+```javascript
+var seenObjects = new _Set();
+function traverse (val) {
+    _traverse(val, seenObjects);
+    seenObjects.clear();
+  }
+1~ traverse函数最终运行的是_traverse
+  function _traverse (val, seen) {
+    var i, keys;
+    var isA = Array.isArray(val);
+    if ((!isA && !isObject(val)) || Object.isFrozen(val) || val instanceof VNode) {
+      return
+    }
+    if (val.__ob__) {
+      var depId = val.__ob__.dep.id;
+      if (seen.has(depId)) {
+        return
+      }
+      seen.add(depId);
+    }
+    if (isA) {
+      i = val.length;
+      while (i--) { _traverse(val[i], seen); }
+    } else {
+      keys = Object.keys(val);
+      i = keys.length;
+      while (i--) { _traverse(val[keys[i]], seen); }
+    }
+  }
+1- 对于value进行校验，如果不是数组/对象，或者是VNode，或者被frezen,证明value不可深入监听。
+2- 对于value为数组或者对象,继续对value的下级进行监听
+3- 当每次数据收集watcher的时候会将数据的dep.id收集到seen中,当seen中有数据的dep.id说明已经收集过了，跳过。
+```
+
+
+
+vue官网对于watch属性的列举
+
+```javascript
+  watch: {
+    a: function (val, oldVal) {
+      console.log('new: %s, old: %s', val, oldVal)
+    },
+    // 方法名
+    b: 'someMethod',
+    // 该回调会在任何被侦听的对象的 property 改变时被调用，不论其被嵌套多深
+    c: {
+      handler: function (val, oldVal) { /* ... */ },
+      deep: true
+    },
+    // 该回调将会在侦听开始之后被立即调用
+    d: {
+      handler: 'someMethod',
+      immediate: true
+    },
+    // 你可以传入回调数组，它们会被逐一调用
+    e: [
+      'handle1',
+      function handle2 (val, oldVal) { /* ... */ },
+      {
+        handler: function handle3 (val, oldVal) { /* ... */ },
+        /* ... */
+      }
+    ],
+    // watch vm.e.f's value: {g: 5}
+    'e.f': function (val, oldVal) { /* ... */ }
+  }
+```
+
+parsePath(expOrFn)
+
+```javascript
+var bailRE = new RegExp(("[^" + (unicodeRegExp.source) + ".$_\\d]"));
+  function parsePath (path) {
+    if (bailRE.test(path)) {
+      return
+    }
+    var segments = path.split('.');
+    return function (obj) {
+      for (var i = 0; i < segments.length; i++) {
+        if (!obj) { return }
+        obj = obj[segments[i]];
+      }
+      return obj
+    }
+  }
+1- 对表达式进行校验,只有通过校验才能返回数据
+2- 返回一个函数作为getter
+```
+

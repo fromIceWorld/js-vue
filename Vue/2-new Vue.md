@@ -143,12 +143,12 @@ computed=》
 对computed进行观察，建立一些watcher。与数据绑定有关【后续分析】
 
 watch=》
-与数据绑定有关【后续分析】
+【后续和computedWatcher，renderWatcher一起分析】
 
 data=》
 单独分析
 
-## 以上详细分析在代码中，在初始化完毕后，是挂载阶段
+## 以上详细分析在代码中或者在单独文件中，在初始化完毕后，是挂载阶段
 ```
 
 **挂载**
@@ -158,7 +158,52 @@ if (vm.$options.el) {
       vm.$mount(vm.$options.el)
     }
 ## $mount 函数是在Vue的原型上（src\platforms\web\entry-runtime-with-compiler.js）
+1-在挂载时，会根据render，template，el 确定挂载的内容
+   -根据el属性,获取el属性对应的Element(1-el是string类型，根据id获取dom，2-el是其他类型，直接返回el), 	   在初始化渲染时，我们会有一个渲染的优先顺序，render属性为主，当没有render属性，寻找template属性，		template如果是字符串且以'#'开头，就根据'#id',去找到id对应的dom属性，获取innerHTML当作			     template,否则template可能是Element，是Element的话直接获取Element的innerHTML当作模板,都不是的		话，告警,没有template的话,根据el属性(此时的el属性应该已经是Element)获取outerHTML作为template,然	后根据我们获取的template属性,对template进行编译(compiler在单独一个文件里'./compiler')
+   -总结：
+	 也就是当有render属性时就不需要对template所对应的值进行编译了，没有render，也是将template对应的值转	 换成render进行挂载。
+2-在对template进行编译后生成render或者本来就有有render，对render进行挂载
+   -运行 mount.call(this, el, hydrating)进行挂载
+   
+3- mount函数是缓存的[公用]的Vue.prototype.$mount方法
+   -在这个方法中，实际是调用的mountComponent(this,el,hydrating)//非服务端渲染情况下hydrating为		false
+```
 
+**mountComponent**
 
+mountComponent 方法在初始化渲染阶段使用，在组件渲染阶段同样使用，我们现在只分析初始化渲染，因此会对 mountComponent 进行简化。
+
+```javascript
+  function mountComponent (
+    vm,
+    el,
+    hydrating  //非服务端渲染为false
+  ) {
+    vm.$el = el;
+    callHook(vm, 'beforeMount');
+    var updateComponent = function () {
+        vm._update(vm._render(), hydrating);
+      };
+    new Watcher(vm, updateComponent, noop, {
+      before: function before () {
+        if (vm._isMounted && !vm._isDestroyed) {
+          callHook(vm, 'beforeUpdate');
+        }
+      }
+    }, true /* isRenderWatcher */);
+    hydrating = false;
+    if (vm.$vnode == null) {
+      vm._isMounted = true;
+      callHook(vm, 'mounted');
+    }
+    return vm
+  }
+
+1-保存el
+2-调用'beforeMount'钩子函数
+3-生成 updateComponent 
+3-new Watcher() 渲染watcher,进行渲染 [渲染watcher,和其他两个一起分析]
+4-根据调用时间，判断是mounted 还是 update
+5-将实例返回
 ```
 
