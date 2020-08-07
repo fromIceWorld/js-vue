@@ -72,7 +72,7 @@ export function createElement (
   tag: any,           //tag标签
   data: any,          //data，标签属性
   children: any,      //子节点
-  normalizationType: any,
+  normalizationType: any, //d
   alwaysNormalize: boolean  // false     
 ): VNode | Array<VNode> {
   if (Array.isArray(data) || isPrimitive(data)) {
@@ -85,6 +85,152 @@ export function createElement (
   }
   return _createElement(context, tag, data, children, normalizationType)
 }
+```
+
+**_createElement(context, tag, data, children, normalizationType)**
+
+```javascript
+export function _createElement (
+  context: Component,
+  tag?: string | Class<Component> | Function | Object,
+  data?: VNodeData,
+  children?: any,
+  normalizationType?: number
+): VNode | Array<VNode> {
+  if (isDef(data) && isDef((data: any).__ob__)) {
+    process.env.NODE_ENV !== 'production' && warn(
+      ’Avoid using observed data object as vnode data: ${JSON.stringify(data)}\n‘ +
+      Always create fresh vnode data objects in each render!,
+      context
+    )
+    return createEmptyVNode()
+  }
+
+  // object syntax in v-bind
+  // v-bind中的对象语法
+  if (isDef(data) && isDef(data.is)) {
+    tag = data.is
+  }
+  if (!tag) {
+    // in case of component :is set to falsy value
+    //在组件的情况下：设置为falsy值
+    return createEmptyVNode()
+  }
+  // warn against non-primitive key
+  //对非基元密钥发出警告
+  if (process.env.NODE_ENV !== 'production' &&
+    isDef(data) && isDef(data.key) && !isPrimitive(data.key)
+  ) {
+    if (!__WEEX__ || !('@binding' in data.key)) {
+      warn(
+        'Avoid using non-primitive value as key, ' +
+        'use string/number value instead.',
+        context
+      )
+    }
+  }
+  // support single function children as default scoped slot
+  //支持将单函数子级作为默认作用域插槽
+  if (Array.isArray(children) &&
+    typeof children[0] === 'function'
+  ) {
+    data = data || {}
+    data.scopedSlots = { default: children[0] }
+    children.length = 0
+  }
+  if (normalizationType === ALWAYS_NORMALIZE) {
+    children = normalizeChildren(children)
+  } else if (normalizationType === SIMPLE_NORMALIZE) {
+    children = simpleNormalizeChildren(children)
+  }
+  let vnode, ns
+  if (typeof tag === 'string') {
+    let Ctor
+    ns = (context.$vnode && context.$vnode.ns) || config.getTagNamespace(tag)
+    if (config.isReservedTag(tag)) {
+      // platform built-in elements
+      //平台内置元件
+      vnode = new VNode(
+        config.parsePlatformTagName(tag), data, children,
+        undefined, undefined, context
+      )
+    } else if ((!data || !data.pre) && isDef(Ctor = resolveAsset(context.$options, 'components', tag))) {
+      // component
+      vnode = createComponent(Ctor, data, context, children, tag)
+    } else {
+      // unknown or unlisted namespaced elements
+      // check at runtime because it may get assigned a namespace when its
+      // parent normalizes children
+      //运行时检查未知或未列出的命名空间元素，因为其父级规范化子级时可能会为其分配命名空间
+      vnode = new VNode(
+        tag, data, children,
+        undefined, undefined, context
+      )
+    }
+  } else {
+    // direct component options / constructor
+    //直接组件选项/构造函数
+    vnode = createComponent(tag, data, context, children)
+  }
+  if (Array.isArray(vnode)) {
+    return vnode
+  } else if (isDef(vnode)) {
+    if (isDef(ns)) applyNS(vnode, ns)
+    if (isDef(data)) registerDeepBindings(data)
+    return vnode
+  } else {
+    return createEmptyVNode()
+  }
+}
+1- 禁止观察属性作为vnode
+2- 处理 <tag :is='componentA'/>  tag = 'componentA'
+3- 没有tag 返回一个空的虚拟节点(<tag :is=''/>)  
+4- 避免使用 string，number，symbol，boolean 作为标签中key属性？？？？？？？
+5- 单函数子级作为默认作用域插槽？？？？？？？？？
+6- 规范children？？？？？？
+7- tag是string类型:
+	-如果是平台内置节点,
+        vnode = new VNode(
+                config.parsePlatformTagName(tag), data, children,
+                undefined, undefined, context
+              )
+	-是组件
+		      vnode = createComponent(Ctor, data, context, children, tag)
+	-其他未知的节点
+		vnode = new VNode(
+                    tag, data, children,
+                    undefined, undefined, context
+                  )
+8-当tag不是string  是构造函数？？？？
+	    vnode = createComponent(tag, data, context, children)
+9-判断vode
+	-vnode是数组？？？？？
+		直接返回
+    -非数组，且不是 undefind /null 
+        如果有ns applyNS(vnode, ns)
+        如果有data registerDeepBindings(data)
+		返回
+    -以上两种都不是的话 返回空的vnode    
 
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
