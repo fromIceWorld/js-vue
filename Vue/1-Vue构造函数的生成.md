@@ -2,7 +2,7 @@
 
 版本：@2.6.10
 
-环境：web ; runtime-with-compiler
+环境：web ;
 
 思维图：https://www.processon.com/view/link/5efc60aa6376891e81f3d350
 
@@ -136,5 +136,86 @@ Vue.compile = compileToFunctions   加入属性
 ```
 
 ------
+
+**经过各种函数的添加。最终获得的Vue构造函数:**
+
+```javascript
+function Vue (options) {
+    if (
+      !(this instanceof Vue)
+    ) {
+      warn('Vue is a constructor and should be called with the `new` keyword');
+    }
+    this._init(options);
+  }
+
+Vue.config
+Vue.util ={
+    warn,
+    extend,
+    mergeOptions,
+    defineReactive,
+}
+Vue.set
+Vue.delete
+Vue.nextTick
+Vue.observable
+Vue.options = {
+    components:{KeepAlive, Transition, TransitionGroup},
+    directive:{model, show},
+    filter:{},
+    _base :Vue
+}
+Vue.use
+Vue.mixin
+Vue.extend
+Vue.component
+Vue.directive
+Vue.filter
+Vue.compile
+
+Vue.prototype = {
+    _init
+    
+	$data
+	$props
+	$set
+	$delete
+	$watch
+    
+	$on
+    $once
+	$off
+	$emit
+    
+	_update
+	$forceUpdate
+    $destroy
+    
+    __patch__
+    $mount
+    
+    $nextTick
+    _render
+    
+    _o = markOnce;
+    _n = toNumber;
+    _s = toString;
+    _l = renderList;
+    _t = renderSlot;
+    _q = looseEqual;
+    _i = looseIndexOf;
+    _m = renderStatic;
+    _f = resolveFilter;
+    _k = checkKeyCodes;
+    _b = bindObjectProps;
+    _v = createTextVNode;
+    _e = createEmptyVNode;
+    _u = resolveScopedSlots;
+    _g = bindObjectListeners;
+    _d = bindDynamicKeys;
+    _p = prependModifier;
+}
+```
 
 以上内容就是Vue@2.6.10构造函数的全部属性。

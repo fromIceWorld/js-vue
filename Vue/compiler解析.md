@@ -2,8 +2,6 @@
 
 概述：对模板的解析，以·<·为标志，用正则进行匹配，当以·<·开头，可能是注释、条件注释、Doctype、结束标签、开始标签；当以·<·开头与以上模式都不匹配，则为文本内的‘<’。
 
-
-
 ```javascript
 let textEnd = html.indexOf('<')
 ```
@@ -272,7 +270,7 @@ handleStartTag:
  4. 拦截判断(!stack.length && element !== root)
 
     ```javascript
-    	当满足上述条件时，整明 根节点属于(v-if控制的节点),且当前节点应该是v-else /v-else-if
+    	当满足上述条件时，证明根节点属于(v-if控制的节点),且当前节点应该是v-else /v-else-if
     将当前节点放入根节点 root 的 ifCondition 属性中{exp:element.elseif,block:element}
     ```
 
@@ -281,8 +279,8 @@ handleStartTag:
     ```javascript
     ** 当前节点有elseif | else 属性时，在父级上的children属性中从后向前找到节点(type ===1),当找到文本节点时会给出提示(if /else / elseif 中间的文本节点会被忽略)，当找到其他节点(没有if属性)会进行告警
     (if / eles / elseif 中间不让有其他节点[非if/ else / elseif ])
-    **当前节点没有else / elseif属性,整明当前节点与前一个节点没甚麽关系,然后如果当前节点是作用域插槽,将当前节点保存到currentParent节点上的scopeSlots属性中，以便v-else(-if)能找到？？？？？？？
-    **将当前节点保存到currentParent的children属性中,更新当前节点的parent属性
+    **当前节点没有else / elseif属性,整明当前节点与前一个节点没甚麽关系,然后如果当前节点是作用域插槽,将当前节点保存到currentParent节点上的scopeSlots[name]属性中，以便v-else(-if)能找到？？？？？？？
+    **将当前节点保存到currentParent的children属性中,当前节点保存parent[互相引用]
     ```
 
  6. 将当前标签的children属性中的节点带slotScope属性的都过滤掉  ？？？？？？为甚麽
@@ -415,7 +413,7 @@ filters:[] //保存过滤器
 ##<!-- prop 绑定。“prop”必须在 my-component 中声明。-->
 <my-component :prop="someThing"></my-component>
 
-##<!-- 通过 $props 将父组件的 props 一起传给子组件 -->
+##<!-- 通过 $props 将父组件的 props 一起传给子组件 -->【啥操作？？？？？？】
 <child-component v-bind="$props"></child-component>
 
 ##<!-- XLink -->
@@ -462,7 +460,7 @@ obj[key] ->{
     key:key
 }
 当返回的 key为null 说明 value就是一个单纯的value不属于某一个object(没有.或者[]分割)
-对于纯value return value = $event
+对于纯value return 'value = $event'
 非纯value   return ("$set(" + (res.exp) + ", " + (res.key) + ", " + $event + ")")
 addHandler函数 将 value 加入事件 event 中
 addHandler(
@@ -474,7 +472,9 @@ addHandler(
     warn,
     list[i]
 )
-el.event[("update:" + (camelize(name)))] = `value`
+el.event[("update:" + (camelize(name)))] = 'value = $event'
+el.event[("update:" + (camelize(name)))] = 
+    					("$set(" + (res.exp) + ", " + (res.key) + ", " + $event + ")")
 
 ** --------------------- v-on ------------------------------
 <!-- 方法处理器 -->
@@ -747,10 +747,6 @@ handlers不存在:
 events[name] = newHandler;
 
 el.plain = false;
-
-
-
-
 ```
 
 
