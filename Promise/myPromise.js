@@ -171,7 +171,7 @@ myPromise.all = function (promises) {
         if(result.length == 0){
             resolve(result)
         }else{
-            for(let i =0 ; i>result.length ; i++){
+            for(let i =0 ; i<result.length ; i++){
                 myPromise.resolve(promises[i]).then(data=>{
                     if(inedx < promises.length){
                         result[i] = data

@@ -56,7 +56,7 @@ new vueRouter({
         'son':{ 路由记录 },
         'girl':{ 路由记录 }    
     })
-    路由记录：{
+    record(路由记录)：{
           path: '/home/son/:age',
           regex: compileRouteRegex(normalizedPath, pathToRegexpOptions),
           components: { default: route.component },

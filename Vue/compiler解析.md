@@ -593,7 +593,7 @@ transforms 转换分为两类(1-style 转换 ；2-class转换)
 
 获取 attrsList 中的 style = "coler:res;size:12px" 中的value属性,对 style="{{...}}"告警
 将value属性解析出(';'分割不同css,':'分割属性及属性值)
-返回res = {color:'red',size:''12px}
+返回res = {color:'red',size:'12px'}
 el.staticStyle = JSON.stringify(res)
 
 2-动态 style
