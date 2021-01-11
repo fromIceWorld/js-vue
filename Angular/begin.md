@@ -135,6 +135,9 @@ createPlatform(Injector.create(
     { providers: injectedProviders, name: 'Platform: core' }
 	)
  );
+
+**注
+下一步Injector.create
 ```
 
 ##### 2.2-Injector
@@ -143,17 +146,21 @@ createPlatform(Injector.create(
 class Injector {
     static create(options, parent) {
         if (Array.isArray(options)) {
-            return INJECTOR_IMPL(options, parent, '');
+            return new StaticInjector(options, parent);
         }
         else {
-            return INJECTOR_IMPL(options.providers, options.parent, options.name || '');
+            return new StaticInjector(options.providers, options.parent, options.name || null);
         }
     }
 }
+
+**引出else- 引出 StaticInjector(providers,"",'Platform: core')
+--附录分析
+
 Injector.create 返回:
 injector = {
     parent:'',
-    source:'Platform: core',
+    source:'',
     _resords:Map<any, Record|null> = {
     {__NG_ELEMENT_ID__：-1,_desc:'INJECTOR'}【InjectionToken实例,alias:INJECTOR】 :
     			{token: INJECTOR, fn: IDENT, deps: EMPTY, value: this, useNew: false},
@@ -164,7 +171,7 @@ injector = {
 }
 ```
 
-##### 2.3-createPlatform
+##### 2.3-createPlatform(finish)
 
 ```javascript
 function createPlatform(injector) {
@@ -181,7 +188,19 @@ function createPlatform(injector) {
 }
 
 **注
+1-获取平台实例injector.get(PlatformRef)【获取的是附录中    recursivelyProcessProviders解析providers后records中的数据】
+2-获取平台初始化，然后运行。
 `最终返回 PlatformRef(平台实例)`
+
+1-recursivelyProcessProviders解析{ provide: PlatformRef, deps: [Injector] }
+	resords<Map> = {
+        PlatformRef：{dep:{ token: Injector, options: 6 },
+                      fn: value=>value, useNew: [], value: false}
+    }
+2-{ provide: PLATFORM_INITIALIZER, useValue: initDomAdapter, multi: true},    resords<Map> = {
+        PLATFORM_INITIALIZER：{dep:[],
+                      fn: value=>value, useNew: [], value: initDomAdapter}
+    }
 ```
 
 ##### 2.4-PlatformRef
@@ -386,6 +405,115 @@ export class InjectionToken<T> {
    toString(): string {
     	return `InjectionToken ${this._desc}`;
   }
+}
+```
+
+###### StaticInjector
+
+```javascript
+var StaticInjector = /** @class */ (function () {
+    function StaticInjector(providers, parent, source) {
+        if (parent === void 0) { parent = NULL_INJECTOR; }
+        if (source === void 0) { source = null; }
+        this.parent = parent;
+        this.source = source;
+        var records = this._records = new Map();
+        records.set(Injector, { token: Injector, fn: IDENT, deps: EMPTY, value: this, useNew: false });
+        records.set(INJECTOR, { token: INJECTOR, fn: IDENT, deps: EMPTY, value: this, useNew: false });
+        recursivelyProcessProviders(records, providers);
+    }
+    StaticInjector.prototype.get = function (token, notFoundValue, flags) {
+        if (flags === void 0) { flags = InjectFlags.Default; }
+        var record = this._records.get(token);
+        try {
+            return tryResolveToken(token, record, this._records, this.parent, notFoundValue, flags);
+        }
+        catch (e) {
+            var tokenPath = e[NG_TEMP_TOKEN_PATH];
+            if (token[SOURCE]) {
+                tokenPath.unshift(token[SOURCE]);
+            }
+            e.message = formatError('\n' + e.message, tokenPath, this.source);
+            e[NG_TOKEN_PATH] = tokenPath;
+            e[NG_TEMP_TOKEN_PATH] = null;
+            throw e;
+        }
+    };
+    StaticInjector.prototype.toString = function () {
+        var tokens = [], records = this._records;
+        records.forEach(function (v, token) { return tokens.push(stringify(token)); });
+        return "StaticInjector[" + tokens.join(', ') + "]";
+    };
+    return StaticInjector;
+}());
+
+生成实例{
+    parent，source，_records
+}
+最后又调用recursivelyProcessProviders(records, providers);
+```
+
+###### recursivelyProcessProviders
+
+```javascript
+function recursivelyProcessProviders(records, provider) {
+    if (provider) {
+        provider = resolveForwardRef(provider);
+        if (provider instanceof Array) {
+            // if we have an array recurse into the array
+            for (var i = 0; i < provider.length; i++) {
+                recursivelyProcessProviders(records, provider[i]);
+            }
+        }
+        else if (typeof provider === 'function') {
+            // Functions were supported in ReflectiveInjector, but are not here. For safety give useful
+            // error messages
+            throw staticError('Function/Class not supported', provider);
+        }
+        else if (provider && typeof provider === 'object' && provider.provide) {
+            // At this point we have what looks like a provider: {provide: ?, ....}
+            var token = resolveForwardRef(provider.provide);
+            var resolvedProvider = resolveProvider(provider);
+            if (provider.multi === true) {
+                // This is a multi provider.
+                var multiProvider = records.get(token);
+                if (multiProvider) {
+                    if (multiProvider.fn !== MULTI_PROVIDER_FN) {
+                        throw multiProviderMixError(token);
+                    }
+                }
+                else {
+                    // Create a placeholder factory which will look up the constituents of the multi provider.
+                    records.set(token, multiProvider = {
+                        token: provider.provide,
+                        deps: [],
+                        useNew: false,
+                        fn: MULTI_PROVIDER_FN,
+                        value: EMPTY
+                    });
+                }
+                // Treat the provider as the token.
+                token = provider;
+                multiProvider.deps.push({ token: token, options: 6 /* Default */ });
+            }
+            var record = records.get(token);
+            if (record && record.fn == MULTI_PROVIDER_FN) {
+                throw multiProviderMixError(token);
+            }
+            records.set(token, resolvedProvider);
+        }
+        else {
+            throw staticError('Unexpected provider', provider);
+        }
+    }
+}
+
+**注
+解析 providers【2.*中的平台注入】，存放到records<provide,{}>中，
+records = {
+    key(provide):value(
+    	{ deps: [默认为空], fn: value=>value, useNew: [], value: false }
+    )
 }
 ```
 
