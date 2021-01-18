@@ -41,13 +41,16 @@ align-items：定义子元素在交叉轴轴的对齐方式；
     center：交叉轴的中点对齐。
     baseline: 项目的第一行文字的基线对齐。
     stretch（默认值）：如果项目未设置高度或设为auto，将占满整个容器的高度。
-align-content：多根轴线的对齐方式。如果项目只有一根轴线，该属性不起作用。
+align-content：多根轴线的对齐方式。【如果项目只有一根轴线，该属性不起作用？】
     flex-start：与交叉轴的起点对齐。
     flex-end：与交叉轴的终点对齐。
     center：与交叉轴的中点对齐。
     space-between：与交叉轴两端对齐，轴线之间的间隔平均分布。
     space-around：每根轴线两侧的间隔都相等。所以，轴线之间的间隔比轴线与边框的间隔大一倍。
     stretch（默认值）：轴线占满整个交叉轴。
+
+****注
+align-content是定义主轴上的多行子元素在交叉轴上的排列方式。    
 ```
 
 ##### 子元素属性
@@ -56,8 +59,14 @@ align-content：多根轴线的对齐方式。如果项目只有一根轴线，�
 order:定义子元素的排列顺序，数值越小，排列越靠前，默认为0；
 flex-grow：定义元素的放大比例，默认为0，即如果存在剩余空间，也不放大。
 flex-shrink：定义元素的缩小比例，默认为1，即如果空间不足，该项目将缩小。
-flex-basis：在分配多余空间之前，项目占据的主轴空间，默认auto
+flex-basis：在分配多余空间之前，项目占据的主轴空间(可以设置width)，默认auto
 flex：<flex-grow> <flex-shrink> <flex-basis>的简写，默认 1 0 auto
 align-self：允许单个项目有与其他项目不一样的对齐方式，覆盖align-items属性，默认auto，继承父属性
+```
+
+##### 注
+
+```
+1-如果子项目不设置flex-basis,直接设置flex-grow，会按照比例平分空间
 ```
 
