@@ -18,6 +18,9 @@ const platformBrowserDynamic = createPlatformFactory(
 。platformCoreDynamic
 。'browserDynamic' 【标识为浏览器平台】
 。INTERNAL_BROWSER_DYNAMIC_PLATFORM_PROVIDERS
+
+**
+核心:createPlatformFactory函数
 ```
 
 ##### 2.1-platformCoreDynamic
@@ -34,6 +37,7 @@ const platformCoreDynamic = createPlatformFactory(platformCore, 'coreDynamic', [
 
 
 **注：
+核心:createPlatformFactory函数
 platformBrowserDynamic[2] 和 platformCoreDynamic[2.1] 都是由【createPlatformFactory构造】
 ```
 
@@ -52,11 +56,11 @@ const platformCore = createPlatformFactory(null, 'core', _CORE_PLATFORM_PROVIDER
 ```typescript
 【创建平台的工厂函数】
 
-先创建【平台核心】，再创建【平台核心动态】，再创建【平台浏览器动态】，最后生成
-const platformBrowserDynamic = [platformCoreDynamic,platformCore]
+	先创建【平台核心:platformCore,1级】，再创建【平台核心动态:platformCoreDynamic，2级】，再创建【平台浏览器动态:platformBrowserDynamic，3级】，最后生成
+const platformBrowserDynamic = [platformCoreDynamic[platformCore]]
 
 export function createPlatformFactory(
-    parentPlatformFactory: ((extraProviders?: StaticProvider[]) => PlatformRef)|null, name: string,
+    parentPlatformFactory: ((extraProviders?: StaticProvider[]) => PlatformRef)|null,         name: string,
     providers: StaticProvider[] = []): (extraProviders?: StaticProvider[]) => PlatformRef {
   const desc = `Platform: ${name}`;
   const marker = new InjectionToken(desc);
@@ -88,7 +92,7 @@ const platformCoreDynamic = createPlatformFactory(platformCore, 'coreDynamic', [
     { provide: COMPILER_OPTIONS, useValue: ɵ0, multi: true },
     { provide: CompilerFactory, useClass: JitCompilerFactory, deps: [COMPILER_OPTIONS] },
 ]);
-同样生成 desc[`Platform:coreDynamic`] 和 marker,合并provider，函数【platformCoreDynamic】供上层供上层2调用
+同样生成 desc[`Platform:coreDynamic`] 和 marker,返回函数【platformCoreDynamic】供上层供上层2调用
 
 再运行2
 const platformBrowserDynamic = createPlatformFactory(
@@ -96,7 +100,7 @@ const platformBrowserDynamic = createPlatformFactory(
     'browserDynamic', 
     INTERNAL_BROWSER_DYNAMIC_PLATFORM_PROVIDERS
 );
-也是生成 desc[`Platform:browserDynamic`] 和 marker 合并provider 然后返回platformBrowserDynamic，也是我们main.ts中的 platformBrowserDynamic函数。
+也是生成 desc[`Platform:browserDynamic`] 和 marker 然后返回platformBrowserDynamic，也就是我们main.ts中的 platformBrowserDynamic函数。
 
 **终
 platformBrowserDynamic()
@@ -109,12 +113,15 @@ const injectedProviders =
     { provide: TestabilityRegistry, deps: [] },
     { provide: Console, deps: [] },
         
+    { provide: {_desc:'Platform: core', ngMetadataName:'InjectionToken'},useValue:true}
+
     { provide: INJECTOR_SCOPE,useValue: 'platform'}
 
 --------------------platformCoreDynamic 的 provide--------------------
     {provide: COMPILER_OPTIONS, useValue: {}, multi: true},
     {provide: CompilerFactory, useClass: JitCompilerFactory, deps: [COMPILER_OPTIONS]},
-    { provide: {_desc, ngMetadataName},useValue:true}
+        
+    { provide: {_desc:'Platform: browserDynamic', ngMetadataName:'InjectionToken'},useValue:true}
 
 ----------------platformBrowserDynamic 的 provide---------------------
     { provide: PLATFORM_ID, useValue: 'browser'},
@@ -128,7 +135,9 @@ const injectedProviders =
                           ]},
                  multi: true
     },
-    {provide: PLATFORM_ID, useValue: 'browser'},	
+    {provide: PLATFORM_ID, useValue: 'browser'},
+    
+    {provide: {_desc:'Platform: coreDynamic', ngMetadataName:'InjectionToken'}, 			 useValue: true}
 ]
 
 createPlatform(Injector.create(
@@ -143,10 +152,14 @@ createPlatform(Injector.create(
 ##### 2.2-Injector
 
 ```javascript
-class Injector {
+abstract class Injector {
+    static THROW_IF_NOT_FOUND = {};
+    static NULL: Injector = new NullInjector();
+	static __NG_ELEMENT_ID__ = -1;
+
     static create(options, parent) {
         if (Array.isArray(options)) {
-            return new StaticInjector(options, parent);
+            return new StaticInjector(options, parent, '');
         }
         else {
             return new StaticInjector(options.providers, options.parent, options.name || null);
@@ -154,21 +167,8 @@ class Injector {
     }
 }
 
-**引出else- 引出 StaticInjector(providers,"",'Platform: core')
---附录分析
-
-Injector.create 返回:
-injector = {
-    parent:'',
-    source:'',
-    _resords:Map<any, Record|null> = {
-    {__NG_ELEMENT_ID__：-1,_desc:'INJECTOR'}【InjectionToken实例,alias:INJECTOR】 :
-    			{token: INJECTOR, fn: IDENT, deps: EMPTY, value: this, useNew: false},
-    Injector类【Injector】: 
-				{token: Injector, fn: IDENT, deps: EMPTY, value: this, useNew: false}
-},
-    scope
-}
+**if逻辑  StaticInjector(providers,"",'')
+--附录分析【StaticInjector】
 ```
 
 ##### 2.3-createPlatform(finish)
@@ -223,50 +223,7 @@ class PlatformRef{
 }
 ```
 
-##### 2.5-InjectionToken
-
-```typescript
-export class InjectionToken<T> {
-  /** @internal */
-  readonly ngMetadataName = 'InjectionToken';
-
-  readonly ɵprov: never|undefined;
-
-  constructor(protected _desc: string, options?: {
-    providedIn?: Type<any>|'root'|'platform'|'any'|null, factory: () => T
-  }) {
-    this.ɵprov = undefined;
-    if (typeof options == 'number') {
-      (typeof ngDevMode === 'undefined' || ngDevMode) &&
-          assertLessThan(options, 0, 'Only negative numbers are supported here');
-      // This is a special hack to assign __NG_ELEMENT_ID__ to this instance.
-      // See `InjectorMarkers`
-      (this as any).__NG_ELEMENT_ID__ = options;
-    } else if (options !== undefined) {
-      this.ɵprov = ɵɵdefineInjectable({
-        token: this,
-        providedIn: options.providedIn || 'root',
-        factory: options.factory,
-      });
-    }
-  }
-
-  toString(): string {
-    return `InjectionToken ${this._desc}`;
-  }
-}
-
-**注
-通过给 InjectionToken 函数传入desc，生成marker。
-marker：{
-   _desc:desc;
-   toString(): string {
-    return `InjectionToken ${this._desc}`;
-  }
-}
-```
-
-##### 2.6-assertPlatform
+##### 2.5-assertPlatform
 
 ```typescript
 export function assertPlatform(requiredToken: any): PlatformRef {
@@ -288,7 +245,7 @@ export function assertPlatform(requiredToken: any): PlatformRef {
 获取平台实例
 ```
 
-##### 2.7-getPlatform
+##### 2.6-getPlatform
 
 ```typescript
 export function getPlatform(): PlatformRef|null {
@@ -296,7 +253,7 @@ export function getPlatform(): PlatformRef|null {
 }
 ```
 
-##### 附录
+#### 附录
 
 ```
 分析 providers
@@ -398,7 +355,7 @@ export class InjectionToken<T> {
 }
 
 **注
-生成注入token
+生成对应 maker和 providers 中的 provider
 {
    ngMetadataName：‘InjectionToken’, 
    ɵprov:undefined,
@@ -411,46 +368,90 @@ export class InjectionToken<T> {
 ###### StaticInjector
 
 ```javascript
-var StaticInjector = /** @class */ (function () {
-    function StaticInjector(providers, parent, source) {
-        if (parent === void 0) { parent = NULL_INJECTOR; }
-        if (source === void 0) { source = null; }
-        this.parent = parent;
-        this.source = source;
-        var records = this._records = new Map();
-        records.set(Injector, { token: Injector, fn: IDENT, deps: EMPTY, value: this, useNew: false });
-        records.set(INJECTOR, { token: INJECTOR, fn: IDENT, deps: EMPTY, value: this, useNew: false });
-        recursivelyProcessProviders(records, providers);
-    }
-    StaticInjector.prototype.get = function (token, notFoundValue, flags) {
-        if (flags === void 0) { flags = InjectFlags.Default; }
-        var record = this._records.get(token);
-        try {
-            return tryResolveToken(token, record, this._records, this.parent, notFoundValue, flags);
-        }
-        catch (e) {
-            var tokenPath = e[NG_TEMP_TOKEN_PATH];
-            if (token[SOURCE]) {
-                tokenPath.unshift(token[SOURCE]);
-            }
-            e.message = formatError('\n' + e.message, tokenPath, this.source);
-            e[NG_TOKEN_PATH] = tokenPath;
-            e[NG_TEMP_TOKEN_PATH] = null;
-            throw e;
-        }
-    };
-    StaticInjector.prototype.toString = function () {
-        var tokens = [], records = this._records;
-        records.forEach(function (v, token) { return tokens.push(stringify(token)); });
-        return "StaticInjector[" + tokens.join(', ') + "]";
-    };
-    return StaticInjector;
-}());
+export class StaticInjector implements Injector {
+  readonly parent: Injector;
+  readonly source: string|null;
+  readonly scope: string|null;
 
-生成实例{
-    parent，source，_records
+  private _records: Map<any, Record|null>;
+
+  constructor(
+      providers: StaticProvider[], parent: Injector = Injector.NULL, source: string|null = null) {
+    this.parent = parent;
+    this.source = source;
+    const records = this._records = new Map<any, Record>();
+    records.set(
+        Injector, <Record>{token: Injector, fn: IDENT, deps: EMPTY, value: this, useNew: false});
+    records.set(
+        INJECTOR, <Record>{token: INJECTOR, fn: IDENT, deps: EMPTY, value: this, useNew: false});
+    this.scope = recursivelyProcessProviders(records, providers);
+  }
+
+  get<T>(token: Type<T>|AbstractType<T>|InjectionToken<T>, notFoundValue?: T, flags?: InjectFlags):
+      T;
+  get(token: any, notFoundValue?: any): any;
+  get(token: any, notFoundValue?: any, flags: InjectFlags = InjectFlags.Default): any {
+    const records = this._records;
+    let record = records.get(token);
+    if (record === undefined) {
+      // This means we have never seen this record, see if it is tree shakable provider.
+      const injectableDef = getInjectableDef(token);
+      if (injectableDef) {
+        const providedIn = injectableDef && injectableDef.providedIn;
+        if (providedIn === 'any' || providedIn != null && providedIn === this.scope) {
+          records.set(
+              token,
+              record = resolveProvider(
+                  {provide: token, useFactory: injectableDef.factory, deps: EMPTY}));
+        }
+      }
+      if (record === undefined) {
+        // Set record to null to make sure that we don't go through expensive lookup above again.
+        records.set(token, null);
+      }
+    }
+    let lastInjector = setCurrentInjector(this);
+    try {
+      return tryResolveToken(token, record, records, this.parent, notFoundValue, flags);
+    } catch (e) {
+      return catchInjectorError(e, token, 'StaticInjectorError', this.source);
+    } finally {
+      setCurrentInjector(lastInjector);
+    }
+  }
+
+  toString() {
+    const tokens = <string[]>[], records = this._records;
+    records.forEach((v, token) => tokens.push(stringify(token)));
+    return `StaticInjector[${tokens.join(', ')}]`;
+  }
 }
-最后又调用recursivelyProcessProviders(records, providers);
+
+INJECTOR = new InjectionToken<Injector>(
+    'INJECTOR',
+    -1, 
+)
+
+生成 StaticInjector 实例 = {
+    parent:Injector.NULL，
+    source:null，
+    _records<map对象>{
+    		Injector：{token: Injector, fn: IDENT, deps: EMPTY, value: this, useNew: false},
+    		INJECTOR:{token: INJECTOR, fn: IDENT, deps: EMPTY, value: this, useNew: false}},
+    scope
+}
+
+Injector:抽象类
+INJECTOR:InjectionToken实例 =  {
+    ngMetadataName : 'InjectionToken',
+    _desc:'INJECTOR',
+    ɵprov:undefined,
+    __NG_ELEMENT_ID__:-1
+    
+}
+
+
+scope属性是调用 recursivelyProcessProviders(records, providers)生成的;
 ```
 
 ###### recursivelyProcessProviders
@@ -515,5 +516,95 @@ records = {
     	{ deps: [默认为空], fn: value=>value, useNew: [], value: false }
     )
 }
+```
+
+###### _records
+
+```
+
+```
+
+###### InjectFlags
+
+```javascript
+注入标记
+InjectFlags = {
+	0:Default
+    1:Host
+    2:Self
+    4:SkipSelf
+    8:Optional
+}
+```
+
+###### INJECTOR_IMPL
+
+```typescript
+INJECTOR_IMPL内部调用 new StaticInjector()
+
+export class StaticInjector {
+    constructor(providers, parent = Injector.NULL, source = null) {
+        this.parent = parent;
+        this.source = source;
+        const records = this._records = new Map();
+        records.set(Injector, { token: Injector, fn: IDENT, deps: EMPTY, value: this, useNew: false });
+        records.set(INJECTOR, { token: INJECTOR, fn: IDENT, deps: EMPTY, value: this, useNew: false });
+        this.scope = recursivelyProcessProviders(records, providers);
+    }
+    get(token, notFoundValue, flags = InjectFlags.Default) {
+        const records = this._records;
+        let record = records.get(token);
+        if (record === undefined) {
+            // This means we have never seen this record, see if it is tree shakable provider.
+            const injectableDef = getInjectableDef(token);
+            if (injectableDef) {
+                const providedIn = injectableDef && injectableDef.providedIn;
+                if (providedIn === 'any' || providedIn != null && providedIn === this.scope) {
+                    records.set(token, record = resolveProvider({ provide: token, useFactory: injectableDef.factory, deps: EMPTY }));
+                }
+            }
+            if (record === undefined) {
+                // Set record to null to make sure that we don't go through expensive lookup above again.
+                records.set(token, null);
+            }
+        }
+        let lastInjector = setCurrentInjector(this);
+        try {
+            return tryResolveToken(token, record, records, this.parent, notFoundValue, flags);
+        }
+        catch (e) {
+            return catchInjectorError(e, token, 'StaticInjectorError', this.source);
+        }
+        finally {
+            setCurrentInjector(lastInjector);
+        }
+    }
+    toString() {
+        const tokens = [], records = this._records;
+        records.forEach((v, token) => tokens.push(stringify(token)));
+        return `StaticInjector[${tokens.join(', ')}]`;
+    }
+}
+```
+
+###### provide注解
+
+```typescript
+------------------------------platformCore的provider-------------
+PLATFORM_ID = new InjectionToken<Object>('Platform ID');
+PlatformRef:class PlatformRef
+TestabilityRegistry:class TestabilityRegistry
+Console: class Console
+    
+ ------------------------------platformCoreDynamic 的 provide-----------
+COMPILER_OPTIONS = new InjectionToken<CompilerOptions[]>('compilerOptions');
+CompilerFactory：class CompilerFactory
+
+----------------platformBrowserDynamic 的 provide---------------------
+PLATFORM_ID
+PLATFORM_INITIALIZER = new InjectionToken<Array<() => void>>('Platform Initializer');
+DOCUMENT = new InjectionToken<Document>('DocumentToken');
+COMPILER_OPTIONS
+PLATFORM_ID
 ```
 
