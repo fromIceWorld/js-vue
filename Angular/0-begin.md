@@ -152,8 +152,9 @@ createPlatform(Injector.create(
 ##### 2.2-Injector
 
 ```javascript
+//是抽象构造函数
 abstract class Injector {
-    static THROW_IF_NOT_FOUND = {};
+    static THROW_IF_NOT_FOUND = THROW_IF_NOT_FOUND = {};
     static NULL: Injector = new NullInjector();
 	static __NG_ELEMENT_ID__ = -1;
 
@@ -167,20 +168,34 @@ abstract class Injector {
     }
 }
 
+export class NullInjector implements Injector {
+  get(token: any, notFoundValue: any = THROW_IF_NOT_FOUND): any {
+    if (notFoundValue === THROW_IF_NOT_FOUND) {
+      const error = new Error(`NullInjectorError: No provider for ${stringify(token)}!`);
+      error.name = 'NullInjectorError';
+      throw error;
+    }
+    return notFoundValue;
+  }
+}
+
+
 **if逻辑  StaticInjector(providers,"",'')
 --附录分析【StaticInjector】
 ```
 
-##### 2.3-createPlatform(finish)
+##### 2.3-*createPlatform(finish)
 
 ```javascript
-function createPlatform(injector) {
+`这一步是初始化的重点：生成平台实例，然后进行平台初始化，最终返回平台实例进行下一步：_platform.bootstrapModule(AppModule)`
+
+function createPlatform(injector) { //injector是StaticInjector实例，见附录，【StaticInjector是Injector的实现】
     if (_platform && !_platform.destroyed &&
         !_platform.injector.get(ALLOW_MULTIPLE_PLATFORMS, false)) {
         throw new Error('There can be only one platform. Destroy the previous one to create a new one.');
     }
     publishDefaultGlobalUtils();
-    _platform = injector.get(PlatformRef);
+    _platform = injector.get(PlatformRef); //在生成的records中查询 PlatformRef，new PlatformRef(...deps)
     const inits = injector.get(PLATFORM_INITIALIZER, null);
     if (inits)
         inits.forEach((init) => init());
@@ -251,6 +266,13 @@ export function assertPlatform(requiredToken: any): PlatformRef {
 export function getPlatform(): PlatformRef|null {
   return _platform && !_platform.destroyed ? _platform : null;
 }
+```
+
+#### 3-总结
+
+```
+将平台依赖和核心依赖汇总【2】，通过创建injector.get创建StaticInjector实例，并将依赖记录到_record中。
+createPlatform(StaticInjector实例)获取PlatformRef依赖生成平台实例_platform
 ```
 
 #### 附录
@@ -432,6 +454,9 @@ INJECTOR = new InjectionToken<Injector>(
     -1, 
 )
 
+*********注---------
+Injector.get:获取对应依赖时，传入flag标记，与 InjectFlags 中的标记做与操作，   
+    
 生成 StaticInjector 实例 = {
     parent:Injector.NULL，
     source:null，
@@ -449,17 +474,79 @@ INJECTOR:InjectionToken实例 =  {
     __NG_ELEMENT_ID__:-1
     
 }
-
-
 scope属性是调用 recursivelyProcessProviders(records, providers)生成的;
+
+****注
+在creaPlatform函数中 injector.get(token),解析token【tryResolveToken，最终调用resolveToken】
 ```
+
+###### resolveToken
+
+```typescript
+function resolveToken(
+    token: any, record: Record|undefined|null, records: Map<any, Record|null>, parent: Injector,
+    notFoundValue: any, flags: InjectFlags): any {
+  let value;
+  if (record && !(flags & InjectFlags.SkipSelf)) {
+    // If we don't have a record, this implies that we don't own the provider hence don't know how
+    // to resolve it.
+    value = record.value;
+    if (value == CIRCULAR) {
+      throw Error(NO_NEW_LINE + 'Circular dependency');
+    } else if (value === EMPTY) {
+      record.value = CIRCULAR;
+      let obj = undefined;
+      let useNew = record.useNew;
+      let fn = record.fn;
+      let depRecords = record.deps;
+      let deps = EMPTY;
+      if (depRecords.length) {
+        deps = [];
+        for (let i = 0; i < depRecords.length; i++) {
+          const depRecord: DependencyRecord = depRecords[i];
+          const options = depRecord.options;
+          const childRecord =
+              options & OptionFlags.CheckSelf ? records.get(depRecord.token) : undefined;
+          deps.push(tryResolveToken(
+              // Current Token to resolve
+              depRecord.token,
+              // A record which describes how to resolve the token.
+              // If undefined, this means we don't have such a record
+              childRecord,
+              // Other records we know about.
+              records,
+              // If we don't know how to resolve dependency and we should not check parent for it,
+              // than pass in Null injector.
+              !childRecord && !(options & OptionFlags.CheckParent) ? Injector.NULL : parent,
+              options & OptionFlags.Optional ? null : Injector.THROW_IF_NOT_FOUND,
+              InjectFlags.Default));
+        }
+      }
+      record.value = value = useNew ? new (fn as any)(...deps) : fn.apply(obj, deps);
+    }
+  } else if (!(flags & InjectFlags.Self)) {
+    value = parent.get(token, notFoundValue, InjectFlags.Default);
+  } else if (!(flags & InjectFlags.Optional)) {
+    value = Injector.NULL.get(token, notFoundValue);
+  } else {
+    value = Injector.NULL.get(token, typeof notFoundValue !== 'undefined' ? notFoundValue : null);
+  }
+  return value;
+}
+
+***注
+在createPlatform阶段，调用 PlatformRef 构造函数，生成平台实例 _platform
+```
+
+
 
 ###### recursivelyProcessProviders
 
 ```javascript
+`递归处理提供的应用`
 function recursivelyProcessProviders(records, provider) {
     if (provider) {
-        provider = resolveForwardRef(provider);
+        provider = resolveForwardRef(provider); //provider是数组返回provider
         if (provider instanceof Array) {
             // if we have an array recurse into the array
             for (var i = 0; i < provider.length; i++) {
@@ -473,7 +560,7 @@ function recursivelyProcessProviders(records, provider) {
         }
         else if (provider && typeof provider === 'object' && provider.provide) {
             // At this point we have what looks like a provider: {provide: ?, ....}
-            var token = resolveForwardRef(provider.provide);
+            var token = resolveForwardRef(provider.provide);  //返回provider 
             var resolvedProvider = resolveProvider(provider);
             if (provider.multi === true) {
                 // This is a multi provider.
@@ -520,20 +607,70 @@ records = {
 
 ###### _records
 
+```typescript
+`经过 recursivelyProcessProviders -> resolveProvider 生成 _records`
+`_record = <Map>{
+    key:value
+}`
+`---------------------platformCore 的 provide 生成的record<Map>------------------`
+injectionToken('Platform ID') --->  {deps:[],value:'unknow',fn:IDENT, useNew:false}
+PlatformRef     --->  {deps:[{token:Injector,options:OptionFlags.Default}],value:EMPTY,fn:PlatformRef, useNew:true}
+TestabilityRegistry --->, {deps: [],fn:IDENT, useNew:false,value:[] }
+console --->, {deps: [],fn:IDENT, useNew:false,value:[] }
+
+`--------------------platformCoreDynamic 的 provide--------------------`
+CompilerFactory --> {deps:[{token:COMPILER_OPTIONS,options:OptionFlags.Default}] ,value:EMPY, fn:JitCompilerFactory ,useNew:true} 
+COMPILER_OPTIONS  -->  {deps: [],token：COMPILER_OPTIONS,fn:MULTI_PROVIDER_FN, useNew:false,value:[] }
+CompilerFactory   -->  {deps:[{token:COMPILER_OPTIONS,options:OptionFlags.Default}],fn:JitCompilerFactory,useNew:true,value:[]}
+    
+`----------------platformBrowserDynamic 的 provide---------------------`
+injectionToken('Platform ID') --->  {deps:[],value:'browser',fn:IDENT, useNew:false} 
+`--------vvvvvvvvvvvv------multi:true 的 PLATFORM_INITIALIZER----vvvvvvv--------`
+PLATFORM_INITIALIZER    --> {deps:[],value:[],token:PLATFORM_INITIALIZER,fn:MULTI_PROVIDER_FN, useNew:false}
+{ provide: PLATFORM_INITIALIZER, useValue: initDomAdapter, multi: true} -->{deps:[],value:initDomAdapter,fn:IDENT, useNew:false}
+`--------^^^^^^^^^^^^--------multi:true 的 PLATFORM_INITIALIZER--^^^^^^^^^^^^-------------`     
+DOCUMENT   --> {deps:[],value:[],fn:_document, useNew:false}
+
+COMPILER_OPTIONS provider 放到前一个COMPILER_OPTIONS的deps中
+{ provide: COMPILER_OPTIONS,
+      useValue: {providers: [{provide: ResourceLoader, 
+                            useClass: ResourceLoaderImpl,
+                            deps: []}
+                          ]},
+                 multi: true
+    },
+`---------------------multi:true的处理方法----------------------`    
+`multi:true的provider`表示为多相同依赖，第一个multi的处理如下
+value中会有token属性【和key相同】，fn属性【MULTI_PROVIDER_FN】
+最终生成 两个record<Map>= {provider-> resolvedProvider,provide:muti分支解析后的provider}
+
+第二次遇到相同key的依赖
+直接将第二个依赖整个作为token，options为OptionFlags.Default，放到第一个依赖deps里面
+{token:provider,options: OptionFlags.Default}
+再次生成record<Map>= {provider-> resolvedProvider}
 ```
 
-```
+###### 注入标记InjectFlags
 
-###### InjectFlags
-
-```javascript
-注入标记
+```typescript
+依赖注入的标记
 InjectFlags = {
-	0:Default
-    1:Host
-    2:Self
-    4:SkipSelf
-    8:Optional
+	0:Default     检查自身，检查父             0b0000
+    1:Host                                  0b0001
+    2:Self        只在当前查找                0b0010
+    4:SkipSelf    跳过当前                   0b0100
+    8:Optional    找不到就插入`defaultValue`  0b1000
+}
+```
+
+###### options标记OptionsFlags
+
+```typescript
+const enum OptionFlags {
+  Optional = 1 << 0,                    1
+  CheckSelf = 1 << 1,                   2
+  CheckParent = 1 << 2,                 4
+  Default = CheckSelf | CheckParent     6
 }
 ```
 
@@ -606,5 +743,127 @@ PLATFORM_INITIALIZER = new InjectionToken<Array<() => void>>('Platform Initializ
 DOCUMENT = new InjectionToken<Document>('DocumentToken');
 COMPILER_OPTIONS
 PLATFORM_ID
+```
+
+###### resolveForwardRef
+
+```typescript
+export function resolveForwardRef<T>(type: T): T {
+  return isForwardRef(type) ? type() : type;
+}
+
+/** Checks whether a function is wrapped by a `forwardRef`. */
+export function isForwardRef(fn: any): fn is() => any {
+  return typeof fn === 'function' && fn.hasOwnProperty(__forward_ref__) &&
+      fn.__forward_ref__ === forwardRef;
+}
+```
+
+###### resolveProvider
+
+```typescript
+function resolveProvider(provider: SupportedProvider): Record {
+  const deps = computeDeps(provider);
+  let fn: Function = IDENT;
+  let value: any = EMPTY;
+  let useNew: boolean = false;
+  let provide = resolveForwardRef(provider.provide);
+  if (USE_VALUE in provider) {
+    // We need to use USE_VALUE in provider since provider.useValue could be defined as undefined.
+    value = (provider as ValueProvider).useValue;
+  } else if ((provider as FactoryProvider).useFactory) {
+    fn = (provider as FactoryProvider).useFactory;
+  } else if ((provider as ExistingProvider).useExisting) {
+    // Just use IDENT
+  } else if ((provider as StaticClassProvider).useClass) {
+    useNew = true;
+    fn = resolveForwardRef((provider as StaticClassProvider).useClass);
+  } else if (typeof provide == 'function') {
+    useNew = true;
+    fn = provide;
+  } else {
+    throw staticError(
+        'StaticProvider does not have [useValue|useFactory|useExisting|useClass] or [provide] is not newable',
+        provider);
+  }
+  return {deps, fn, useNew, value};
+}
+
+****注
+返回数据的用处
+deps是本层【provider】所依赖的数据，
+fn,是运行时需要的函数 useFactory 、useClass、或者provide自身【根据传入数据决定】
+useNew为true，则fn为函数时，使用new fn(...deps)获取值,否则fn.apply(undefined,deps)
+value:与 useValue 属性有关，当有useValue属性时，在resolveToken时直接使用。没有useValue的话，默认为EMPTY，在解析时[resolveToken]，设置为CIRCULAR【作为标记，防止循环依赖】
+```
+
+###### computeDeps
+
+```typescript
+function computeDeps(provider: StaticProvider): DependencyRecord[] {
+  let deps: DependencyRecord[] = EMPTY;
+  const providerDeps: any[] =
+      (provider as ExistingProvider & StaticClassProvider & ConstructorProvider).deps;
+  if (providerDeps && providerDeps.length) {
+    deps = [];
+    for (let i = 0; i < providerDeps.length; i++) {
+      let options = OptionFlags.Default;
+      let token = resolveForwardRef(providerDeps[i]);
+      if (Array.isArray(token)) {
+        for (let j = 0, annotations = token; j < annotations.length; j++) {
+          const annotation = annotations[j];
+          if (annotation instanceof Optional || annotation == Optional) {
+            options = options | OptionFlags.Optional;
+          } else if (annotation instanceof SkipSelf || annotation == SkipSelf) {
+            options = options & ~OptionFlags.CheckSelf;
+          } else if (annotation instanceof Self || annotation == Self) {
+            options = options & ~OptionFlags.CheckParent;
+          } else if (annotation instanceof Inject) {
+            token = (annotation as Inject).token;
+          } else {
+            token = resolveForwardRef(annotation);
+          }
+        }
+      }
+      deps.push({token, options});
+    }
+  } else if ((provider as ExistingProvider).useExisting) {
+    const token = resolveForwardRef((provider as ExistingProvider).useExisting);
+    deps = [{token, options: OptionFlags.Default}];
+  } else if (!providerDeps && !(USE_VALUE in provider)) {
+    // useValue & useExisting are the only ones which are exempt from deps all others need it.
+    throw staticError('\'deps\' required', provider);
+  }
+  return deps;
+}
+
+***注
+根据deps中的数据，对依赖进行解析，如果是单个依赖，将{token，OptionFlags.Default}存入deps，在调用父级时，调用。
+当依赖是数组，【有点复杂。。。】
+
+当没有下级依赖时，根据传入的 useExisting，决定deps中的token：[{token:useExisting, options: OptionFlags.Default}]
+
+options属性是为了标记在引用当前deps时，如何解析依赖，在 injector.get 函数中调用。
+```
+
+#### 输出 injector.get（token）
+
+其他模块用到依赖时，通过【injector.get(token)】获取【_recods】中存储的依赖,然后进行【resolveToken操作】根据各种标志位，对依赖进行运行，将返回值作为参数传递给上级依赖，递归的运行依赖。
+
+##### 输出injector.get(PlatformRef)
+
+```typescript
+`这个injector是 StaticInjector 的实例`
+主要运行：resolveToken(PlatformRef, record, _record, Injector.NULL, '', InjectFlags.Default)
+
+最终：return new PlatformRef(...dep)
+```
+
+##### 输出injector.get(CompilerFactory)
+
+```typescript
+主要运行：resolveToken(CompilerFactory, record, _record, Injector.NULL, '', InjectFlags.Default)
+
+最终 return new JitCompilerFactory(...deps)//参数是编译配置 _record 中的 COMPILER_OPTIONS
 ```
 

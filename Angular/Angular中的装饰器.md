@@ -62,11 +62,15 @@ export function makeDecorator<T>(
   });
 }
 
+**备注
+noSideEffects 会执行 参数(fn)
+
 **
 返回装饰器工厂DecoratorFactory,就是我们的 NgModel 装饰器，arg就是传入的参数，(this是ts一种限制，不是参数🙄)
 
-在编译ts时，生成注释实例 annotationInstance = {...arg},返回TypeDecorator。
+在编译ts时，生成注释实例 annotationInstance = {...arg},由于 annotationInstance 是 DecoratorFactory 的实例，因此集成了 ngMetadataName 属性【标识】，在其他步骤用，最后 返回 TypeDecorator。
 在后续装饰时对class AppModule{} 进行操作，
-AppModule.__annotations__ = [annotationInstance].
+AppModule.__annotations__ = [{providers,import,declarations,bootstrap...}].
+`NgModule装饰器为class上添加注释__annotations__，注释是装饰器的参数`
 ```
 
