@@ -1,4 +1,4 @@
-### bootstrapModule
+## bootstrapModule
 
 bootstrapModule是引导模块，由第一步中返回的平台实例执行，传入的第一个参数是**AppModule**，是根模块。第二个参数初始化时未传入。
 
@@ -12,8 +12,9 @@ bootstrapModule<M>(
         .then(moduleFactory => this.bootstrapModuleFactory(moduleFactory, options));
   }
 `注----------`
-主要是合并编译配置【初始阶段未传入编译配置】，运行compileNgModuleFactory
-compileNgModuleFactory(this.injector, {}, moduleType) //this.injector就是第一步中的StaticInjector实例
+主要是合并编译配置【初始阶段未传入编译配置】，运行compileNgModuleFactory【初始化阶段无编译配置】
+compileNgModuleFactory(this.injector, {}, moduleType) 
+//this指向 PlatformRef 实例【_platform】，this.injector就是第一步中的StaticInjector实例
 ```
 
 #### 1-compileNgModuleFactory
@@ -30,8 +31,9 @@ function compileNgModuleFactory<M>(
 `调用injector.get(CompilerFactory);在【0-begin】中有返回值 JitCompilerFactory实例`
 然后运行实例原型方法JitCompilerFactory的createCompiler,提供JIT编译需要的依赖。
 在createCompiler最后调用 injector.get(Compiler)
-最终compiler.compileModuleAsync(moduleType)【运行 CompilerImpl 的 compileModuleAsync】
-也就是进行 【异步的编译模块】，参数是`AppModule`
+最终compiler.compileModuleAsync(moduleType)
+`实例化 CompilerImpl 的同时 实例化了 JitCompiler，存储在 CompilerImpl 实例 `
+【运行 CompilerImpl 的 compileModuleAsync】也就是进行 【异步的编译模块】，参数是`AppModule`
 ```
 
 #### 2-compileModuleAsync
@@ -52,12 +54,12 @@ private _compileModuleAndComponents(moduleType: Type, isSync: boolean): SyncAsyn
       return this._compileModule(moduleType);
     });
   }    
-`分为三步：SyncAsync.then，
-		this._loadModules(moduleType, isSync)，
-        () => {
-          this._compileComponents(moduleType, null);
-          return this._compileModule(moduleType);
-        }`  
+`分为三步：1- SyncAsync.then，
+		 2- this._loadModules(moduleType, isSync)，
+         3- () => {
+              this._compileComponents(moduleType, null);
+              return this._compileModule(moduleType);
+            }`  
 ```
 
 #### 2.1-_loadModules(第一步)
@@ -67,11 +69,10 @@ private _compileModuleAndComponents(moduleType: Type, isSync: boolean): SyncAsyn
 private _loadModules(mainModule: any, isSync: boolean): SyncAsync<any> {
     const loading: Promise<any>[] = [];
     const mainNgModule = this._metadataResolver.getNgModuleMetadata(mainModule)!;
-    // Note: for runtime compilation, we want to transitively compile all modules,
-    // so we also need to load the declared directives / pipes for all nested modules.
+//过滤根模块的 依赖模块的AOT模块
     this._filterJitIdentifiers(mainNgModule.transitiveModule.modules).forEach((nestedNgModule) => {
-      // getNgModuleMetadata only returns null if the value passed in is not an NgModule
       const moduleMeta = this._metadataResolver.getNgModuleMetadata(nestedNgModule)!;
+//过滤根模块的 依赖模块的AOT指令        
       this._filterJitIdentifiers(moduleMeta.declaredDirectives).forEach((ref) => {
         const promise =
             this._metadataResolver.loadDirectiveMetadata(moduleMeta.type.reference, ref, isSync);
@@ -87,25 +88,78 @@ private _loadModules(mainModule: any, isSync: boolean): SyncAsync<any> {
   
 `_metadataResolver属于依赖 CompileMetadataResolver`  
 `mainNgModule 是2.1.1返回的数据`
-终：loading是解析所有组件后生成的相关数据的集合。
+终：loading为[]。
 ```
 
 ##### 2.1.1-getNgModuleMetadata
 
 ```typescript
-`CompileMetadataResolver 依赖的 getNgModuleMetadata 函数 200行😫，只放伪代码`
+`获取模块的编译元数据`
+const declaredDirectives: cpl.CompileIdentifierMetadata[] = [];
+const exportedNonModuleIdentifiers: cpl.CompileIdentifierMetadata[] = [];
+const declaredPipes: cpl.CompileIdentifierMetadata[] = [];
+const importedModules: cpl.CompileNgModuleSummary[] = [];
+const exportedModules: cpl.CompileNgModuleSummary[] = [];
+const providers: cpl.CompileProviderMetadata[] = [];
+const entryComponents: cpl.CompileEntryComponentMetadata[] = [];
+const bootstrapComponents: cpl.CompileIdentifierMetadata[] = [];
+const schemas: SchemaMetadata[] = [];
+
+`CompileMetadataResolver 的 getNgModuleMetadata 函数 200行😫，只放伪代码`
+//获取模块的annotations
 const meta = this._ngModuleResolver.resolve(moduleType, throwIfNotFound = true);【下2.1.2】
+//获取导入模块的摘要信息，如果导入模块还有对应的导入模块，继续获取，最后缓存并返回摘要信息存入【importedModules数组】
 if(meta.imports){...}
+//获取导出模块的摘要信息，如果导入模块还有对应的导出模块，继续获取，最后缓存并返回摘要信息存入【importedModules数组】,如果不存在摘要信息，将其存入[exportedNonModuleIdentifiers]
 if(meta.exports){...}
+//providers的元数据
 const transitiveModule = this._getTransitiveNgModuleMetadata(importedModules, exportedModules);
+//将组件/指令/管道存入 《transitiveModule》 和 declaredDirectives               
 if(meta.declarations){...}
+
 if(meta.providers){...}
+//组件元数据 存入【entryComponents】
 if(meta.entryComponents){...}
+//bootstrapComponents元数据，存入bootstrapComponents,再存到 entryComponents。
 if(meta.bootstrap){...}
+//schemas数据，存入schemas
 if(meta.schemas){...}
+
+//生成模块的编译元数据。
 compileMeta = new cpl.CompileNgModuleMetadata(...)
 return compileMeta; 
 
+1-`importedModules[] 和 exportedModules[] 储存的模块摘要信息`：{
+      summaryKind: 'CompileSummaryKind.NgModule',
+      type: this.type,
+      entryComponents: module.entryComponents,
+      providers: module.providers,
+      modules: module.modules,
+      exportedDirectives: module.exportedDirectives,
+      exportedPipes: module.exportedPipes
+}                                              
+2-`exportedNonModuleIdentifiers[]存入的 导出模块信息`：{
+    reference: 导出模块
+}
+3-`declaredDirectives[] 储存该模块需要的指令/组件/管道`：{
+    reference: 指令/组件/管道
+}
+4-`providers[] 数据`：{
+    
+}                   
+5-`entryComponents[] 数据`：{
+    {componentType: 组件, componentFactory: dirSummary.componentFactory!}
+    {componentType: bootstrapComponents组件, componentFactory: dirSummary.componentFactory!}
+} 
+6-`bootstrapComponents[] 数据`：{
+    reference: 组件
+}                   
+7-`schemas[] 数据`：{
+    schemas
+} 
+将 1-7 解析出的元数据，经过 new cpl.CompileNgModuleMetadata(...)生成实例，返回实例【实例有toSummary 原型函数，可生成该模块的摘要信息。】                  
+                   
+                   
 `_ngModuleResolver用到了NgModuleResolver依赖😐` 
                                               
 终：`解析出@NgModule装饰器的参数，生成 CompileNgModuleMetadata 实例并返回`                                         注：`CompileNgModuleMetadata`  是收集所有参数信息的集合。   
@@ -114,7 +168,10 @@ return compileMeta;
 ###### 2.1.1.1-_getTransitiveNgModuleMetadata
 
 ```typescript
-  private _getTransitiveNgModuleMetadata(
+`从所有的导入/导出模块中 收集 providers/entryComponents 和导入导出模块`
+`返回的是数据集【transitiveModule】`
+ transitiveModule 收集了 @NgModule({...}) 参数的摘要信息 
+private _getTransitiveNgModuleMetadata(
       importedModules: cpl.CompileNgModuleSummary[],
       exportedModules: cpl.CompileNgModuleSummary[]): cpl.TransitiveCompileNgModuleMetadata {
     // collect `providers` / `entryComponents` from all imported and all exported modules
@@ -151,9 +208,6 @@ return compileMeta;
     });
     return result;
   }
-`从所有的导入/导出模块中 收集 providers/entryComponents ????`
-`返回的数据是【transitiveModule】`
- transitiveModule 收集了 @NgModule({...}) 参数的摘要信息
 ```
 
 ###### 2.1.1.2-compileMeta
@@ -180,7 +234,207 @@ _getTypeMetadata函数:{
     lifecycleHooks:getAllLifecycleHooks(this._reflector, moduleType),
 }
 `cpl.CompileNgModuleMetadata 函数 返回 CompileNgModuleMetadata 实例，根据传入数据包装成 CompileNgModuleMetadata 实例，添加一个 toSummary 原型方法。`
+```
 
+###### 2.1.1.3-loadDirectiveMetadata
+
+```typescript
+`加载指令元数据【组件是指令的子类，包含在指令中】`
+`ngModuleType`:模块
+`directiveType`：模块下的指令
+
+ loadDirectiveMetadata(ngModuleType: any, directiveType: any, isSync: boolean): SyncAsync<null> {
+    if (this._directiveCache.has(directiveType)) {
+      return null;
+    }
+    directiveType = resolveForwardRef(directiveType);
+// 返回 { 经过处理的指令元数据, 当前组件的annotation }
+    const {annotation, metadata} = this.getNonNormalizedDirectiveMetadata(directiveType)!;
+
+    const createDirectiveMetadata = (templateMetadata: cpl.CompileTemplateMetadata|null) => {
+      const normalizedDirMeta = new cpl.CompileDirectiveMetadata({
+        isHost: false,
+        type: metadata.type,
+        isComponent: metadata.isComponent,
+        selector: metadata.selector,
+        exportAs: metadata.exportAs,
+        changeDetection: metadata.changeDetection,
+        inputs: metadata.inputs,
+        outputs: metadata.outputs,
+        hostListeners: metadata.hostListeners,
+        hostProperties: metadata.hostProperties,
+        hostAttributes: metadata.hostAttributes,
+        providers: metadata.providers,
+        viewProviders: metadata.viewProviders,
+        queries: metadata.queries,
+        guards: metadata.guards,
+        viewQueries: metadata.viewQueries,
+        entryComponents: metadata.entryComponents,
+        componentViewType: metadata.componentViewType,
+        rendererType: metadata.rendererType,
+        componentFactory: metadata.componentFactory,
+        template: templateMetadata
+      });
+      if (templateMetadata) {
+        this.initComponentFactory(metadata.componentFactory!, templateMetadata.ngContentSelectors);
+      }
+      this._directiveCache.set(directiveType, normalizedDirMeta);
+      this._summaryCache.set(directiveType, normalizedDirMeta.toSummary());
+      return null;
+    };
+
+    if (metadata.isComponent) {
+      const template = metadata.template !;
+      const templateMeta = this._directiveNormalizer.normalizeTemplate({
+        ngModuleType,
+        componentType: directiveType,
+        moduleUrl: this._reflector.componentModuleUrl(directiveType, annotation),
+        encapsulation: template.encapsulation,
+        template: template.template,
+        templateUrl: template.templateUrl,
+        styles: template.styles,
+        styleUrls: template.styleUrls,
+        animations: template.animations,
+        interpolation: template.interpolation,
+        preserveWhitespaces: template.preserveWhitespaces
+      });
+      if (isPromise(templateMeta) && isSync) {
+        this._reportError(componentStillLoadingError(directiveType), directiveType);
+        return null;
+      }
+      return SyncAsync.then(templateMeta, createDirectiveMetadata);
+    } else {
+      // directive
+      createDirectiveMetadata(null);
+      return null;
+    }
+  }
+`加载组件和指令 走不同的处理生成相似的数据; 【指令无模板数据，组件有模板数据】 `  
+```
+
+###### 2.1.1.4-getNonNormalizedDirectiveMetadata
+
+```typescript
+`获取非标准指令元数据`
+`directiveType`：组件及指令
+
+getNonNormalizedDirectiveMetadata(directiveType: any):
+      {annotation: Directive, metadata: cpl.CompileDirectiveMetadata}|null {
+    directiveType = resolveForwardRef(directiveType);
+    if (!directiveType) {
+      return null;
+    }
+    let cacheEntry = this._nonNormalizedDirectiveCache.get(directiveType);
+    if (cacheEntry) {
+      return cacheEntry;
+    }
+      //获取当前指令的 annotations 和 父类的 annotations 合并成数组 [annotations, Parentannotations]返回
+    const dirMeta = this._directiveResolver.resolve(directiveType, false);
+    if (!dirMeta) {
+      return null;
+    }
+    let nonNormalizedTemplateMetadata: cpl.CompileTemplateMetadata = undefined!;
+//组件逻辑
+    if (createComponent.isTypeOf(dirMeta)) {
+      // component
+      const compMeta = dirMeta as Component;
+      assertArrayOfStrings('styles', compMeta.styles);
+      assertArrayOfStrings('styleUrls', compMeta.styleUrls);
+      assertInterpolationSymbols('interpolation', compMeta.interpolation);
+
+      const animations = compMeta.animations;
+
+      nonNormalizedTemplateMetadata = new cpl.CompileTemplateMetadata({
+        encapsulation: noUndefined(compMeta.encapsulation),
+        template: noUndefined(compMeta.template),
+        templateUrl: noUndefined(compMeta.templateUrl),
+        htmlAst: null,
+        styles: compMeta.styles || [],
+        styleUrls: compMeta.styleUrls || [],
+        animations: animations || [],
+        interpolation: noUndefined(compMeta.interpolation),
+        isInline: !!compMeta.template,
+        externalStylesheets: [],
+        ngContentSelectors: [],
+        preserveWhitespaces: noUndefined(dirMeta.preserveWhitespaces),
+      });
+    }
+
+    let changeDetectionStrategy: ChangeDetectionStrategy = null!;
+    let viewProviders: cpl.CompileProviderMetadata[] = [];
+    let entryComponentMetadata: cpl.CompileEntryComponentMetadata[] = [];
+    let selector = dirMeta.selector;
+//组件逻辑
+    if (createComponent.isTypeOf(dirMeta)) {
+      // Component
+      const compMeta = dirMeta as Component;
+      changeDetectionStrategy = compMeta.changeDetection!;
+      if (compMeta.viewProviders) {
+        viewProviders = this._getProvidersMetadata(
+            compMeta.viewProviders, entryComponentMetadata,
+            `viewProviders for "${stringifyType(directiveType)}"`, [], directiveType);
+      }
+      if (compMeta.entryComponents) {
+        entryComponentMetadata = flattenAndDedupeArray(compMeta.entryComponents)
+                                     .map((type) => this._getEntryComponentMetadata(type)!)
+                                     .concat(entryComponentMetadata);
+      }
+      if (!selector) {
+        selector = this._schemaRegistry.getDefaultComponentElementName();
+      }
+    } else {
+      // Directive
+      if (!selector) {
+        selector = null!;
+      }
+    }
+
+    let providers: cpl.CompileProviderMetadata[] = [];
+    if (dirMeta.providers != null) {
+      providers = this._getProvidersMetadata(
+          dirMeta.providers, entryComponentMetadata,
+          `providers for "${stringifyType(directiveType)}"`, [], directiveType);
+    }
+    let queries: cpl.CompileQueryMetadata[] = [];
+    let viewQueries: cpl.CompileQueryMetadata[] = [];
+    if (dirMeta.queries != null) {
+      queries = this._getQueriesMetadata(dirMeta.queries, false, directiveType);
+      viewQueries = this._getQueriesMetadata(dirMeta.queries, true, directiveType);
+    }
+
+    const metadata = cpl.CompileDirectiveMetadata.create({
+      isHost: false,
+      selector: selector,
+      exportAs: noUndefined(dirMeta.exportAs),
+      isComponent: !!nonNormalizedTemplateMetadata,
+      type: this._getTypeMetadata(directiveType),
+      template: nonNormalizedTemplateMetadata,
+      changeDetection: changeDetectionStrategy,
+      inputs: dirMeta.inputs || [],
+      outputs: dirMeta.outputs || [],
+      host: dirMeta.host || {},
+      providers: providers || [],
+      viewProviders: viewProviders || [],
+      queries: queries || [],
+      guards: dirMeta.guards || {},
+      viewQueries: viewQueries || [],
+      entryComponents: entryComponentMetadata,
+      componentViewType: nonNormalizedTemplateMetadata ? this.getComponentViewClass(directiveType) :
+                                                         null,
+       //规范化的指令元数据【2.1.1.3】 
+      rendererType: nonNormalizedTemplateMetadata ? this.getDirectiveMetadata(directiveType) : null,
+        //
+      componentFactory: null
+    });
+    if (nonNormalizedTemplateMetadata) {
+      metadata.componentFactory =
+          this.getComponentFactory(selector, directiveType, metadata.inputs, metadata.outputs);
+    }
+    cacheEntry = {metadata, annotation: dirMeta};
+    this._nonNormalizedDirectiveCache.set(directiveType, cacheEntry);
+    return cacheEntry;
+  }
+`最终返回 { 经过处理的指令元数据, 当前组件的annotation }`
 ```
 
 
@@ -227,43 +481,13 @@ export function findLast<T>(arr: T[], condition: (value: T) => boolean): T|null 
 ##### 2.1.3-CompileReflector
 
 ```typescript
+`编译反射器`
 {provide: CompileReflector, useValue: new JitReflector()},
-用的是JitReflector实例    
+用的是JitReflector实例
+`见附录 CompileReflector依赖`
 ```
 
-##### 2.1.4-JitReflector
-
-```typescript
-`用到 annotations 函数`
-export class JitReflector implements CompileReflector {
-  private reflectionCapabilities = new ReflectionCapabilities();
-
-  componentModuleUrl(type: any, cmpMetadata: Component): string {
-    const moduleId = cmpMetadata.moduleId;
-
-    if (typeof moduleId === 'string') {
-      const scheme = getUrlScheme(moduleId);
-      return scheme ? moduleId : `package:${moduleId}${MODULE_SUFFIX}`;
-    } else if (moduleId !== null && moduleId !== void 0) {
-      throw syntaxError(
-          `moduleId should be a string in "${
-              stringify(type)}". See https://goo.gl/wIDDiL for more information.\n` +
-          `If you're using Webpack you should inline the template and the styles, see https://goo.gl/X2J8zc.`);
-    }
-
-    return `./${stringify(type)}`;
-  }
-  annotations(typeOrFunc: /*Type*/ any): any[] {
-    return this.reflectionCapabilities.annotations(typeOrFunc);
-  }
-    
-  ......
-}
-
-`用到的函数 annotations ; 主要用到 ReflectionCapabilities实例的 annotations`
-```
-
-##### 2.1.5-ReflectionCapabilities
+##### 2.1.4-ReflectionCapabilities
 
 ```typescript
 `200行😫，只放部分代码`
@@ -289,18 +513,22 @@ class ReflectionCapabilities{
 #### 2.2-_compileComponents（第二步）
 
 ```typescript
-  _compileComponents(mainModule: Type, allComponentFactories: object[]|null) {
+`编译组件` 
+_compileComponents(mainModule: Type, allComponentFactories: object[]|null) {
     const ngModule = this._metadataResolver.getNgModuleMetadata(mainModule)!;
     const moduleByJitDirective = new Map<any, CompileNgModuleMetadata>();
     const templates = new Set<CompiledTemplate>();
-
+//编译依赖模块中的组件【只处理JIT,过滤AOT】,将结果存储到 templates中；
     const transJitModules = this._filterJitIdentifiers(ngModule.transitiveModule.modules);
     transJitModules.forEach((localMod) => {
       const localModuleMeta = this._metadataResolver.getNgModuleMetadata(localMod)!;
       this._filterJitIdentifiers(localModuleMeta.declaredDirectives).forEach((dirRef) => {
+          //存储 指令->模块 的映射关系
         moduleByJitDirective.set(dirRef, localModuleMeta);
+          //dirMeta 是 2.1.3中 【normalizedDirMeta】
         const dirMeta = this._metadataResolver.getDirectiveMetadata(dirRef);
         if (dirMeta.isComponent) {
+            //编译组件并收集到templates【CompiledTemplate实例】
           templates.add(this._createCompiledTemplate(dirMeta, localModuleMeta));
           if (allComponentFactories) {
             const template =
@@ -311,6 +539,7 @@ class ReflectionCapabilities{
         }
       });
     });
+    
     transJitModules.forEach((localMod) => {
       const localModuleMeta = this._metadataResolver.getNgModuleMetadata(localMod)!;
       this._filterJitIdentifiers(localModuleMeta.declaredDirectives).forEach((dirRef) => {
@@ -335,10 +564,103 @@ class ReflectionCapabilities{
   }
 `ngModule 和2.1.1相同，获取参数`
 `过滤掉AOT，将组件保存到 tenplates`
-`将 entryComponents 保存到 tenplates`
+templates:[2.2.2]
+`dirMeta 是 2.1.3中 【normalizedDirMeta】`
+调用2.2.3，循环处理 template
 ```
 
-#### 2.3-_compileModule
+##### 2.2.1-_createCompiledTemplate
+
+```typescript
+`compMeta:组件元数据，是 2.1.3中 【normalizedDirMeta】; ngModule:组件所在的模块`
+private _createCompiledTemplate(
+      compMeta: CompileDirectiveMetadata, ngModule: CompileNgModuleMetadata): CompiledTemplate {
+    let compiledTemplate = this._compiledTemplateCache.get(compMeta.type.reference);
+    if (!compiledTemplate) {
+      assertComponent(compMeta);
+      compiledTemplate = new CompiledTemplate(
+          false, compMeta.type, compMeta, ngModule, ngModule.transitiveModule.directives);
+      this._compiledTemplateCache.set(compMeta.type.reference, compiledTemplate);
+    }
+    return compiledTemplate;
+  }
+`返回 CompiledTemplate 实例【2.2.2】`
+```
+
+##### 2.2.2-CompiledTemplate
+
+```typescript
+class CompiledTemplate {
+  private _viewClass: Function = null!;
+  isCompiled = false;
+  constructor(
+      public isHost: boolean, public compType: CompileIdentifierMetadata,
+      public compMeta: CompileDirectiveMetadata, public ngModule: CompileNgModuleMetadata,
+      public directives: CompileIdentifierMetadata[]) {}
+
+  compiled(viewClass: Function, rendererType: any) {
+    this._viewClass = viewClass;
+    (<ProxyClass>this.compMeta.componentViewType).setDelegate(viewClass);
+    for (let prop in rendererType) {
+      (<any>this.compMeta.rendererType)[prop] = rendererType[prop];
+    }
+    this.isCompiled = true;
+  }
+}
+`返回实例`：{
+    _viewClass:null,
+    isCompiled:false
+    isHost：false,
+    compType: 组件class【是 2.1.3中 normalizedDirMeta.type】,
+    compMeta: 组件编译数据【是 2.1.3中 normalizedDirMeta】
+    ngModule: 组件所属模块
+    directives: 组件模块的指令/管道/组件
+}
+2.2.3调用 compiled 函数，传入参数，调整实例数据。
+```
+
+##### 2.2.3-_compileTemplate
+
+```typescript
+`编译模板`
+`compMeta.template`是 【是 2.1.3中 templateMeta】
+  private _compileTemplate(template: CompiledTemplate) {
+    if (template.isCompiled) {
+      return;
+    }
+    const compMeta = template.compMeta;
+    const externalStylesheetsByModuleUrl = new Map<string, CompiledStylesheet>();
+    const outputContext = createOutputContext();
+      //【见附录StyleCompiler】
+    const componentStylesheet = this._styleCompiler.compileComponent(outputContext, compMeta);
+      
+    compMeta.template !.externalStylesheets.forEach((stylesheetMeta) => {
+      const compiledStylesheet =
+          this._styleCompiler.compileStyles(createOutputContext(), compMeta, stylesheetMeta);
+      externalStylesheetsByModuleUrl.set(stylesheetMeta.moduleUrl!, compiledStylesheet);
+    });
+      
+    this._resolveStylesCompileResult(componentStylesheet, externalStylesheetsByModuleUrl);
+      
+    const pipes = template.ngModule.transitiveModule.pipes.map(
+        pipe => this._metadataResolver.getPipeSummary(pipe.reference));
+    const {template: parsedTemplate, pipes: usedPipes} =
+        this._parseTemplate(compMeta, template.ngModule, template.directives);
+    const compileResult = this._viewCompiler.compileComponent(
+        outputContext, compMeta, parsedTemplate, ir.variable(componentStylesheet.stylesVar),
+        usedPipes);
+    const evalResult = this._interpretOrJit(
+        templateJitUrl(template.ngModule.type, template.compMeta), outputContext.statements);
+    const viewClass = evalResult[compileResult.viewClassVar];
+    const rendererType = evalResult[compileResult.rendererTypeVar];
+    template.compiled(viewClass, rendererType);
+  }
+`最终运行的是 2.2.2-CompiledTemplate 中的compiled函数`
+```
+
+
+
+#### 2.3-_compileModule(第二步的返回值)
 
 ```typescript
   private _compileModule(moduleType: Type): object {
@@ -347,7 +669,9 @@ class ReflectionCapabilities{
       const moduleMeta = this._metadataResolver.getNgModuleMetadata(moduleType)!;
       // Always provide a bound Compiler
       const extraProviders = this.getExtraNgModuleProviders(moduleMeta.type.reference);
+        
       const outputCtx = createOutputContext();
+        //2.3.2
       const compileResult = this._ngModuleCompiler.compile(outputCtx, moduleMeta, extraProviders);
       ngModuleFactory = this._interpretOrJit(
           ngModuleJitUrl(moduleMeta), outputCtx.statements)[compileResult.ngModuleFactoryVar];
@@ -355,8 +679,107 @@ class ReflectionCapabilities{
     }
     return ngModuleFactory;
   }
-`return ngModuleFactory;`
+`获取 ngModuleFactory【无缓存就生成 ngModuleFactory】`
+`moduleMeta 是模块的元数据【2.1.1.2步骤】`
+`extraProviders` Compiler的 provider【？？？？？】
+`compileResult` 用到【2.3.2-NgModuleCompiler】
+`ngModuleJitUrl(moduleMeta)` 是 `ng:///` + `${identifierName(moduleMeta.type)}/module.ngfactory.js`
+
+最终返回 {key：value}映射。
 ```
+
+##### 2.3.1-_interpretOrJit
+
+```typescript
+`sourceUrl`: `ng:///` + `${identifierName(moduleMeta.type)}/module.ngfactory.js`
+private _interpretOrJit(sourceUrl: string, statements: ir.Statement[]): any {
+    if (!this._compilerConfig.useJit) {
+      return interpretStatements(statements, this._reflector);
+    } else {
+      return this._jitEvaluator.evaluateStatements(
+          sourceUrl, statements, this._reflector, this._compilerConfig.jitDevMode);
+    }
+  }
+```
+
+##### 2.3.1.1-_jitEvaluator
+
+```typescript
+class JitEvaluator{
+      evaluateStatements(
+          sourceUrl: string, statements: o.Statement[], reflector: CompileReflector,
+          createSourceMaps: boolean): {[key: string]: any} {
+        const converter = new JitEmitterVisitor(reflector);
+        const ctx = EmitterVisitorContext.createRoot();
+        // Ensure generated code is in strict mode
+        if (statements.length > 0 && !isUseStrictStatement(statements[0])) {
+          statements = [
+            o.literal('use strict').toStmt(),
+            ...statements,
+          ];
+        }
+        converter.visitAllStatements(statements, ctx);
+        converter.createReturnStmt(ctx);
+        return this.evaluateCode(sourceUrl, ctx, converter.getArgs(), createSourceMaps);
+      }
+}
+```
+
+
+
+##### 2.3.2-NgModuleCompiler
+
+```typescript
+class NgModuleCompiler{
+    compile(
+      ctx: OutputContext, ngModuleMeta: CompileNgModuleMetadata,
+      extraProviders: CompileProviderMetadata[]): NgModuleCompileResult {
+          
+    const sourceSpan = typeSourceSpan('NgModule', ngModuleMeta.type);
+    const entryComponentFactories = ngModuleMeta.transitiveModule.entryComponents;
+    const bootstrapComponents = ngModuleMeta.bootstrapComponents;
+    const providerParser =
+        new NgModuleProviderAnalyzer(this.reflector, ngModuleMeta, extraProviders, sourceSpan);
+    const providerDefs =
+        [componentFactoryResolverProviderDef(
+             this.reflector, ctx, NodeFlags.None, entryComponentFactories)]
+            .concat(providerParser.parse().map((provider) => providerDef(ctx, provider)))
+            .map(({providerExpr, depsExpr, flags, tokenExpr}) => {
+              return o.importExpr(Identifiers.moduleProviderDef).callFn([
+                o.literal(flags), tokenExpr, providerExpr, depsExpr
+              ]);
+            });
+
+    const ngModuleDef = o.importExpr(Identifiers.moduleDef).callFn([o.literalArr(providerDefs)]);
+    const ngModuleDefFactory =
+        o.fn([new o.FnParam(LOG_VAR.name!)], [new o.ReturnStatement(ngModuleDef)], o.INFERRED_TYPE);
+
+    const ngModuleFactoryVar = `${identifierName(ngModuleMeta.type)}NgFactory`;
+    this._createNgModuleFactory(
+        ctx, ngModuleMeta.type.reference, o.importExpr(Identifiers.createModuleFactory).callFn([
+          ctx.importExpr(ngModuleMeta.type.reference),
+          o.literalArr(bootstrapComponents.map(id => ctx.importExpr(id.reference))),
+          ngModuleDefFactory
+        ]));
+
+    if (ngModuleMeta.id) {
+      const id = typeof ngModuleMeta.id === 'string' ? o.literal(ngModuleMeta.id) :
+                                                       ctx.importExpr(ngModuleMeta.id);
+      const registerFactoryStmt = o.importExpr(Identifiers.RegisterModuleFactoryFn)
+                                      .callFn([id, o.variable(ngModuleFactoryVar)])
+                                      .toStmt();
+      ctx.statements.push(registerFactoryStmt);
+    }
+
+    return new NgModuleCompileResult(ngModuleFactoryVar);
+  }
+}
+`返回 NgModuleCompileResult实例` ：{
+    ngModuleFactoryVar:`${identifierName(ngModuleMeta.type)}NgFactory`
+}
+```
+
+
 
 #### 3-bootstrapModuleFactory
 
@@ -420,6 +843,287 @@ then(moduleFactory => this.bootstrapModuleFactory(moduleFactory, options));
 
 
 ### 附录
+
+#### compiler依赖
+
+```typescript
+const COMPILER_PROVIDERS__PRE_R3__ = <StaticProvider[]>[
+    //编译反射器
+  {provide: CompileReflector, useValue: new JitReflector()},
+    //资源加载器
+  {provide: ResourceLoader, useValue: _NO_RESOURCE_LOADER},
+    //JIT摘要解析器
+  {provide: JitSummaryResolver, deps: []},
+    //摘要解析器
+  {provide: SummaryResolver, useExisting: JitSummaryResolver},
+  {provide: Console, deps: []},
+    //语法解析器
+  {provide: Lexer, deps: []},
+  {provide: Parser, deps: [Lexer]},
+    //基本的HTML解析器
+  {
+    provide: baseHtmlParser,
+    useClass: HtmlParser,
+    deps: [],
+  },
+    // 国际化的HTML解析器
+  {
+    provide: I18NHtmlParser,
+    useFactory:
+        (parser: HtmlParser, translations: string|null, format: string, config: CompilerConfig,
+         console: Console) => {
+          translations = translations || '';
+          const missingTranslation =
+              translations ? config.missingTranslation! : MissingTranslationStrategy.Ignore;
+          return new I18NHtmlParser(parser, translations, format, missingTranslation, console);
+        },
+    deps: [
+      baseHtmlParser,
+      [new Optional(), new Inject(TRANSLATIONS)],
+      [new Optional(), new Inject(TRANSLATIONS_FORMAT)],
+      [CompilerConfig],
+      [Console],
+    ]
+  },
+  {
+    provide: HtmlParser,
+    useExisting: I18NHtmlParser,
+  },
+    // 模板解析器
+  {
+    provide: TemplateParser,
+    deps: [CompilerConfig, CompileReflector, Parser, ElementSchemaRegistry, I18NHtmlParser, Console]
+  },
+  {provide: JitEvaluator, useClass: JitEvaluator, deps: []},
+    // 指令规范器
+  {provide: DirectiveNormalizer, deps: [ResourceLoader, UrlResolver, HtmlParser, CompilerConfig]},
+  {
+    provide: CompileMetadataResolver,
+    deps: [
+      CompilerConfig, HtmlParser, NgModuleResolver, DirectiveResolver, PipeResolver,
+      SummaryResolver, ElementSchemaRegistry, DirectiveNormalizer, Console,
+      [Optional, StaticSymbolCache], CompileReflector, [Optional, ERROR_COLLECTOR_TOKEN]
+    ]
+  },
+  DEFAULT_PACKAGE_URL_PROVIDER,
+    // 样式编译器
+  {provide: StyleCompiler, deps: [UrlResolver]},
+    // view 编译器
+  {provide: ViewCompiler, deps: [CompileReflector]},
+    // NgModule编译器
+  {provide: NgModuleCompiler, deps: [CompileReflector]},
+    // 注编译器配置
+  {provide: CompilerConfig, useValue: new CompilerConfig()},
+    // 编译器
+  {
+    provide: Compiler,
+    useClass: CompilerImpl,
+    deps: [
+      Injector, CompileMetadataResolver, TemplateParser, StyleCompiler, ViewCompiler,
+      NgModuleCompiler, SummaryResolver, CompileReflector, JitEvaluator, CompilerConfig, Console
+    ]
+  },
+    // DOM schema
+  {provide: DomElementSchemaRegistry, deps: []},
+    // Element schema
+  {provide: ElementSchemaRegistry, useExisting: DomElementSchemaRegistry},
+    // URL解析器
+  {provide: UrlResolver, deps: [PACKAGE_ROOT_URL]},
+    // 指令解析器
+  {provide: DirectiveResolver, deps: [CompileReflector]},
+    // 管道解析器
+  {provide: PipeResolver, deps: [CompileReflector]},
+    // 模块解析器
+  {provide: NgModuleResolver, deps: [CompileReflector]},
+];
+{
+        provide: CompilerConfig,
+        useFactory: () => {
+          return new CompilerConfig({
+            // let explicit values from the compiler options overwrite options
+            // from the app providers
+            useJit: opts.useJit,
+            jitDevMode: isDevMode(),
+            // let explicit values from the compiler options overwrite options
+            // from the app providers
+            defaultEncapsulation: opts.defaultEncapsulation,
+            missingTranslation: opts.missingTranslation,
+            preserveWhitespaces: opts.preserveWhitespaces,
+          });
+        },
+        deps: []
+      }
+```
+
+#### DirectiveResolver【指令解析器】
+
+```typescript
+class DirectiveResolver{
+    constructor(private _reflector: CompileReflector) {}
+      resolve(type: Type): Directive;
+      resolve(type: Type, throwIfNotFound: true): Directive;
+      resolve(type: Type, throwIfNotFound: boolean): Directive|null;
+      resolve(type: Type, throwIfNotFound = true): Directive|null {
+        const typeMetadata = this._reflector.annotations(resolveForwardRef(type));
+        if (typeMetadata) {
+          const metadata = findLast(typeMetadata, isDirectiveMetadata);
+          if (metadata) {
+            const propertyMetadata = this._reflector.propMetadata(type);
+            const guards = this._reflector.guards(type);
+            return this._mergeWithPropertyMetadata(metadata, propertyMetadata, guards, type);
+          }
+        }
+
+        if (throwIfNotFound) {
+          throw new Error(`No Directive annotation found on ${stringify(type)}`);
+        }
+
+        return null;
+      }
+}
+```
+
+#### CompileReflector【编译反射器】，用到的是 JitReflector
+
+```typescript
+`用到 annotations 函数`
+export class JitReflector implements CompileReflector {
+  private reflectionCapabilities = new ReflectionCapabilities();
+
+  componentModuleUrl(type: any, cmpMetadata: Component): string {
+    const moduleId = cmpMetadata.moduleId;
+
+    if (typeof moduleId === 'string') {
+      const scheme = getUrlScheme(moduleId);
+      return scheme ? moduleId : `package:${moduleId}${MODULE_SUFFIX}`;
+    } else if (moduleId !== null && moduleId !== void 0) {
+      throw syntaxError(
+          `moduleId should be a string in "${
+              stringify(type)}". See https://goo.gl/wIDDiL for more information.\n` +
+          `If you're using Webpack you should inline the template and the styles, see https://goo.gl/X2J8zc.`);
+    }
+
+    return `./${stringify(type)}`;
+  }
+  annotations(typeOrFunc: /*Type*/ any): any[] {
+    return this.reflectionCapabilities.annotations(typeOrFunc);
+  }
+    
+  ......
+}
+
+`用到的函数 annotations ; 主要用到 ReflectionCapabilities实例的 annotations`【附录ReflectionCapabilities】
+```
+
+#### CompileMetadataResolver【编译元数据解析器】
+
+```typescript
+实例：_metadataResolver
+`解析及缓存 模块/管道/指令/模块/摘要信息`
+```
+
+#### StyleCompiler【样式编译器】
+
+```typescript
+`shim`:设置组件样式的范围【样式隔离[只影响自身，默认], 样式不隔离[影响上下], 样式只影响子组件,】，有四种，通过设置组件的encapsulation值来配置
+class StyleCompiler{
+    compileComponent(outputCtx: OutputContext, comp: CompileDirectiveMetadata): CompiledStylesheet {
+        const template = comp.template !;【2.1.3 中的 templateMetadata】
+        return this._compileStyles(
+            outputCtx, comp, new CompileStylesheetMetadata({
+              styles: template.styles,
+              styleUrls: template.styleUrls,
+              moduleUrl: identifierModuleUrl(comp.type)
+            }),
+            this.needsStyleShim(comp), true);
+      }
+  private _compileStyles(
+      outputCtx: OutputContext, comp: CompileDirectiveMetadata,
+      stylesheet: CompileStylesheetMetadata, shim: boolean,
+      isComponentStylesheet: boolean): CompiledStylesheet {
+          //解析组件中 styles 数据
+    const styleExpressions: o.Expression[] =
+        stylesheet.styles.map(plainStyle => o.literal(this._shimIfNeeded(plainStyle, shim)));
+          //解析组件中 styleUrls 数据 
+    const dependencies: StylesCompileDependency[] = [];
+    stylesheet.styleUrls.forEach((styleUrl) => {
+      const exprIndex = styleExpressions.length;
+      
+      styleExpressions.push(null!);
+      dependencies.push(new StylesCompileDependency(
+          getStylesVarName(null), styleUrl,
+          (value) => styleExpressions[exprIndex] = outputCtx.importExpr(value)));
+    });
+    
+    const stylesVar = getStylesVarName(isComponentStylesheet ? comp : null);
+    const stmt = o.variable(stylesVar)
+                     .set(o.literalArr(
+                         styleExpressions, new o.ArrayType(o.DYNAMIC_TYPE, [o.TypeModifier.Const])))
+                     .toDeclStmt(null, isComponentStylesheet ? [o.StmtModifier.Final] : [
+                       o.StmtModifier.Final, o.StmtModifier.Exported
+                     ]);
+    outputCtx.statements.push(stmt);
+    return new CompiledStylesheet(outputCtx, stylesVar, dependencies, shim, stylesheet);
+  }    
+}
+`生成编译样式表`：{
+     outputCtx: OutputContext,
+     stylesVar: string,
+     dependencies: StylesCompileDependency[], 
+     isShimmed: boolean,
+     meta: CompileStylesheetMetadata) {}
+}
+```
+
+###### 解析组件 style 数据
+
+```typescript
+const COMPONENT_VARIABLE = '%COMP%';
+export const HOST_ATTR = `_nghost-${COMPONENT_VARIABLE}`;
+export const CONTENT_ATTR = `_ngcontent-${COMPONENT_VARIABLE}`;
+
+private _shimIfNeeded(style: string, shim: boolean): string {
+    return shim ? this._shadowCss.shimCssText(style, CONTENT_ATTR, HOST_ATTR) : style;
+  }
+
+shimCssText(cssText: string, selector: string, hostSelector: string = ''): string {
+    const commentsWithHash = extractCommentsWithHash(cssText); //正则匹配 提取注释
+    cssText = stripComments(cssText);   // 去除条纹注释
+    cssText = this._insertDirectives(cssText);
+
+    const scopedCssText = this._scopeCssText(cssText, selector, hostSelector);
+    return [scopedCssText, ...commentsWithHash].join('\n');
+  }
+'根据 传入的 shim 解析 css 返回'
+```
+
+
+
+#### ReflectionCapabilities
+
+```typescript
+export class ReflectionCapabilities implements PlatformReflectionCapabilities {
+      private _reflect: any;
+
+      constructor(reflect?: any) {
+        this._reflect = reflect || global['Reflect'];
+      }
+      annotations(typeOrFunc: Type<any>): any[] {
+        if (!isType(typeOrFunc)) {
+          return [];
+        }
+        const parentCtor = getParentCtor(typeOrFunc);
+        const ownAnnotations = this._ownAnnotations(typeOrFunc, parentCtor) || [];
+        const parentAnnotations = parentCtor !== Object ? this.annotations(parentCtor) : [];
+        return parentAnnotations.concat(ownAnnotations);
+      }
+    .......
+}
+`getParentCtor`: 获取父类的构造函数
+`ownAnnotations`: 获取自身 annotations
+`parentAnnotations` 获取父类 annotations
+返回 当前指令类的父类的 annotations
+```
 
 #### JitCompilerFactory
 

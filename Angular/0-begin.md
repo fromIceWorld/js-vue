@@ -3,7 +3,7 @@
 ```javascript
 platformBrowserDynamic().bootstrapModule(AppModule)
   .catch(err => console.error(err));
-项目由 platformBrowserDynamic【平台浏览器动态？】 函数的返回值 bootstrapModule函数 加载核心app.module【业务入口】
+platformBrowserDynamic 函数加载依赖模块， 调用返回值的 bootstrapModule函数 加载核心app.module【业务入口】
 ```
 
 #### 2-platformBrowserDynamic
@@ -14,28 +14,48 @@ const platformBrowserDynamic = createPlatformFactory(
     'browserDynamic', 
     INTERNAL_BROWSER_DYNAMIC_PLATFORM_PROVIDERS
 );
-又由 createPlatformFactory 【创建平台工厂？？】接收三个值构造
-。platformCoreDynamic
-。'browserDynamic' 【标识为浏览器平台】
-。INTERNAL_BROWSER_DYNAMIC_PLATFORM_PROVIDERS
-
+由 createPlatformFactory 【创建平台实例的工厂函数】接收三个值构造
+。platformCoreDynamic                          //平台核心动态
+。'browserDynamic' 【标识为浏览器平台】            //平台标志
+。INTERNAL_BROWSER_DYNAMIC_PLATFORM_PROVIDERS  //平台依赖提供数据：[
+     [
+    		{provide: PLATFORM_ID, useValue: PLATFORM_BROWSER_ID},
+            {provide: PLATFORM_INITIALIZER, useValue: initDomAdapter, multi: true},
+            {provide: DOCUMENT, useFactory: _document, deps: []},],
+    {
+        provide: COMPILER_OPTIONS,
+        useValue: {providers: [{provide: ResourceLoader, useClass: ResourceLoaderImpl, deps: []}]},
+        multi: true
+      },
+  	{	provide: PLATFORM_ID, useValue: PLATFORM_BROWSER_ID},
+    ]
+`依赖`：
+    COMPILER_OPTIONS:       编译配置`<InjectionToken>实例`;
+    PLATFORM_ID：           平台ID`<InjectionToken>实例`;
+	PLATFORM_INITIALIZER:   平台初始化时执行的函数`<InjectionToken>实例`;
+	DOCUMENT:               浏览器document`<InjectionToken>实例`;
 **
-核心:createPlatformFactory函数
+`核心:createPlatformFactory函数 和 平台依赖`
 ```
 
 ##### 2.1-platformCoreDynamic
 
 ```javascript
-【平台核心动态？？？】
+【平台核心动态】
 const platformCoreDynamic = createPlatformFactory(platformCore, 'coreDynamic', [
     { provide: COMPILER_OPTIONS, useValue: ɵ0, multi: true },
     { provide: CompilerFactory, useClass: JitCompilerFactory, deps: [COMPILER_OPTIONS] },
 ]);
-。platformCore
-。'coreDynamic'
-。提供的一些配置？？？？
-
-
+。platformCore                  //平台核心
+。'coreDynamic'                 //标志
+。平台核心依赖：[
+              {provide: COMPILER_OPTIONS, useValue: {}, multi: true},
+              {provide: CompilerFactory, useClass: JitCompilerFactory, deps: [COMPILER_OPTIONS]},
+            ]            
+`依赖`：
+    COMPILER_OPTIONS：  编译配置`<InjectionToken>实例`
+	CompilerFactory：   编译的工厂函数 `函数CompilerFactory`
+    
 **注：
 核心:createPlatformFactory函数
 platformBrowserDynamic[2] 和 platformCoreDynamic[2.1] 都是由【createPlatformFactory构造】
@@ -47,6 +67,19 @@ platformBrowserDynamic[2] 和 platformCoreDynamic[2.1] 都是由【createPlatfor
 【平台核心】
 const platformCore = createPlatformFactory(null, 'core', _CORE_PLATFORM_PROVIDERS);
 
+null:无更深依赖
+'core':平台标志
+_CORE_PLATFORM_PROVIDERS：[
+      // Set a default platform name for platforms that don't set it explicitly.
+      {provide: PLATFORM_ID, useValue: 'unknown'},
+      {provide: PlatformRef, deps: [Injector]},
+      {provide: TestabilityRegistry, deps: []},
+      {provide: Console, deps: []},
+    ];
+`依赖`：
+    PlatformRef            平台构造函数`函数 PlatformRef`;
+    TestabilityRegistry    ？？？`函数 TestabilityRegistry`;
+    Console                console函数`函数 Console`;
 **注
 这个也是由 createPlatformFactory 构造【2，2.1，2.1.1都是由其构造】
 ```
@@ -54,10 +87,12 @@ const platformCore = createPlatformFactory(null, 'core', _CORE_PLATFORM_PROVIDER
 #### 2.*-createPlatformFactory
 
 ```typescript
-【创建平台的工厂函数】
+【创建实例化平台的工厂函数】
 
-	先创建【平台核心:platformCore,1级】，再创建【平台核心动态:platformCoreDynamic，2级】，再创建【平台浏览器动态:platformBrowserDynamic，3级】，最后生成
-const platformBrowserDynamic = [platformCoreDynamic[platformCore]]
+	先创建【平台核心:platformCore,1级】，
+    再创建【平台核心动态:platformCoreDynamic，2级】，
+    再创建【平台浏览器动态:platformBrowserDynamic，3级】，最后生成：
+	const platformBrowserDynamic = [platformCoreDynamic[platformCore]]
 
 export function createPlatformFactory(
     parentPlatformFactory: ((extraProviders?: StaticProvider[]) => PlatformRef)|null,         name: string,
@@ -85,14 +120,16 @@ export function createPlatformFactory(
 
 先运行的2.1.1
 const platformCore = createPlatformFactory(null, 'core', _CORE_PLATFORM_PROVIDERS);
-生成 desc[`Platform:core`] 和 marker 然后返回 函数【platformCore】供上层2.1调用
+生成 desc = `Platform:core` 和 包含 desc 的marker【InjectionToken实例】 
+然后返回函数【platformCore】供上层2.1调用
 
 再运行2.1
 const platformCoreDynamic = createPlatformFactory(platformCore, 'coreDynamic', [
     { provide: COMPILER_OPTIONS, useValue: ɵ0, multi: true },
     { provide: CompilerFactory, useClass: JitCompilerFactory, deps: [COMPILER_OPTIONS] },
 ]);
-同样生成 desc[`Platform:coreDynamic`] 和 marker,返回函数【platformCoreDynamic】供上层供上层2调用
+同样生成 desc[`Platform:coreDynamic`] 和包含 desc 的marker,
+返回函数【platformCoreDynamic】供上层2调用
 
 再运行2
 const platformBrowserDynamic = createPlatformFactory(
@@ -100,33 +137,33 @@ const platformBrowserDynamic = createPlatformFactory(
     'browserDynamic', 
     INTERNAL_BROWSER_DYNAMIC_PLATFORM_PROVIDERS
 );
-也是生成 desc[`Platform:browserDynamic`] 和 marker 然后返回platformBrowserDynamic，也就是我们main.ts中的 platformBrowserDynamic函数。
+也是生成 desc[`Platform:browserDynamic`] 和包含 desc 的marker， 
+然后返回platformBrowserDynamic，也就是我们main.ts中的 platformBrowserDynamic函数。
 
-**终
-platformBrowserDynamic()
-如果还没有创建平台实例【_platform】，就将逐级获取2.1，2.1.1;将provider进行合并。
+
+`运行platformBrowserDynamic()`
+
+
+如果还没有创建平台实例【_platform】或者允许多平台，就逐级运行2.1,2.1.1;将provider进行合并。
 const injectedProviders =
 [
----------------------platformCore 的 provide------------------
+`---------------------platformCore 的 provide------------------`
     { provide: PLATFORM_ID, useValue: 'unknown' },
     { provide: PlatformRef, deps: [Injector] },
     { provide: TestabilityRegistry, deps: [] },
     { provide: Console, deps: [] },
         
-    { provide: {_desc:'Platform: core', ngMetadataName:'InjectionToken'},useValue:true}
-
-    { provide: INJECTOR_SCOPE,useValue: 'platform'}
-
---------------------platformCoreDynamic 的 provide--------------------
+    
+`--------------------platformCoreDynamic 的 provide--------------------`
     {provide: COMPILER_OPTIONS, useValue: {}, multi: true},
     {provide: CompilerFactory, useClass: JitCompilerFactory, deps: [COMPILER_OPTIONS]},
         
-    { provide: {_desc:'Platform: browserDynamic', ngMetadataName:'InjectionToken'},useValue:true}
-
-----------------platformBrowserDynamic 的 provide---------------------
-    { provide: PLATFORM_ID, useValue: 'browser'},
-    { provide: PLATFORM_INITIALIZER, useValue: initDomAdapter, multi: true},
-    { provide: DOCUMENT, useFactory: _document, deps: []},
+`----------------platformBrowserDynamic 的 provide---------------------`
+    [
+        { provide: PLATFORM_ID, useValue: 'browser'},
+        { provide: PLATFORM_INITIALIZER, useValue: initDomAdapter, multi: true},
+        { provide: DOCUMENT, useFactory: _document, deps: []},
+]
         
     { provide: COMPILER_OPTIONS,
       useValue: {providers: [{provide: ResourceLoader, 
@@ -136,22 +173,31 @@ const injectedProviders =
                  multi: true
     },
     {provide: PLATFORM_ID, useValue: 'browser'},
-    
-    {provide: {_desc:'Platform: coreDynamic', ngMetadataName:'InjectionToken'}, 			 useValue: true}
+`-------------------------平台标志【每次合并provider时添加】-------------------------`    
+    { provide: InjectionToken<'Platform: browserDynamic'>,useValue: true}
+	{ provide: InjectionToken<'Platform: coreDynamic'>,useValue:true}
+	{ provide: InjectionToken<'Platform: core'>,useValue:true}
+
+`---------------------合并完成providers后 添加的`
+    { provide: INJECTOR_SCOPE,useValue: 'platform'}
+
 ]
+
+`INJECTOR_SCOPE` ： InjectionToken<'root'|'platform'|null>
+
 
 createPlatform(Injector.create(
     { providers: injectedProviders, name: 'Platform: core' }
 	)
  );
 
-**注
-下一步Injector.create
+`**注`
+下一步Injector.create【参数是对象，走else逻辑】
 ```
 
 ##### 2.2-Injector
 
-```javascript
+```typescript
 //是抽象构造函数
 abstract class Injector {
     static THROW_IF_NOT_FOUND = THROW_IF_NOT_FOUND = {};
@@ -180,11 +226,28 @@ export class NullInjector implements Injector {
 }
 
 
-**if逻辑  StaticInjector(providers,"",'')
+**else逻辑  StaticInjector(providers, "", 'Platform: core')
 --附录分析【StaticInjector】
 ```
 
-##### 2.3-*createPlatform(finish)
+###### 2.2.1-new NullInjector()
+
+```typescript
+export class NullInjector implements Injector {
+  get(token: any, notFoundValue: any = THROW_IF_NOT_FOUND): any {
+    if (notFoundValue === THROW_IF_NOT_FOUND) {
+      const error = new Error(`NullInjectorError: No provider for ${stringify(token)}!`);
+      error.name = 'NullInjectorError';
+      throw error;
+    }
+    return notFoundValue;
+  }
+}
+```
+
+
+
+##### 2.3-*createPlatform(终)
 
 ```javascript
 `这一步是初始化的重点：生成平台实例，然后进行平台初始化，最终返回平台实例进行下一步：_platform.bootstrapModule(AppModule)`
@@ -203,7 +266,7 @@ function createPlatform(injector) { //injector是StaticInjector实例，见附�
 }
 
 **注
-1-获取平台实例injector.get(PlatformRef)【获取的是附录中    recursivelyProcessProviders解析providers后records中的数据】
+1-获取平台实例injector.get(PlatformRef)【获取的是附录中 recursivelyProcessProviders解析providers后records中的数据】
 2-获取平台初始化，然后运行。
 `最终返回 PlatformRef(平台实例)`
 
@@ -222,12 +285,13 @@ function createPlatform(injector) { //injector是StaticInjector实例，见附�
 
 ```javascript
 class PlatformRef{
-    constructor(_injector) {
-        this._injector = _injector;
-        this._modules = [];
-        this._destroyListeners = [];
-        this._destroyed = false;
-    }
+    private _modules: NgModuleRef<any>[] = [];
+  	private _destroyListeners: Function[] = [];
+  	private _destroyed: boolean = false;
+
+  	/** @internal */
+  	constructor(private _injector: Injector) {}
+
     bootstrapModuleFactory(){}
     bootstrapModule(){}   //引导挨app.module
     _moduleDoBootstrap(){}
@@ -236,6 +300,9 @@ class PlatformRef{
     destroy(){}
     get destroyed(){}
 }
+`nwe 生成 PlatformRef实例 _platform;`
+`_injector 是我们实例化后的 StaticInjector`:[附录 StaticInjector 的结果]
+
 ```
 
 ##### 2.5-assertPlatform
@@ -271,8 +338,10 @@ export function getPlatform(): PlatformRef|null {
 #### 3-总结
 
 ```
-将平台依赖和核心依赖汇总【2】，通过创建injector.get创建StaticInjector实例，并将依赖记录到_record中。
-createPlatform(StaticInjector实例)获取PlatformRef依赖生成平台实例_platform
+将平台依赖和核心依赖汇总【2】，通过创建injector.get创建 StaticInjecto r实例，并将依赖记录到 _record 中。
+createPlatform(StaticInjector实例)获取 PlatformRef 依赖生成平台实例 _platform，
+_platform 实例中 记录着 StaticInjector 实例，
+最后返回 _platform 去执行 原型上的 bootstrapModule【1-bootstrapModule文档】
 ```
 
 #### 附录
@@ -390,6 +459,7 @@ export class InjectionToken<T> {
 ###### StaticInjector
 
 ```javascript
+`2.2-Injector 调用 StaticInjector(汇总后的providers, "", 'Platform: core')`
 export class StaticInjector implements Injector {
   readonly parent: Injector;
   readonly source: string|null;
@@ -455,29 +525,32 @@ INJECTOR = new InjectionToken<Injector>(
 )
 
 *********注---------
-Injector.get:获取对应依赖时，传入flag标记，与 InjectFlags 中的标记做与操作，   
+Injector.get:获取对应依赖时，传入flag标记，与 InjectFlags 中的标记做`与`操作，   
     
 生成 StaticInjector 实例 = {
-    parent:Injector.NULL，
-    source:null，
+    parent:Injector.NULL = new NullInjector()【2.2.1】，
+    source:'Platform: core'，
     _records<map对象>{
-    		Injector：{token: Injector, fn: IDENT, deps: EMPTY, value: this, useNew: false},
-    		INJECTOR:{token: INJECTOR, fn: IDENT, deps: EMPTY, value: this, useNew: false}},
-    scope
+    		Injector:{token: Injector, fn: IDENT, deps: EMPTY, value: this, useNew: false},
+    		INJECTOR:{token: INJECTOR, fn: IDENT, deps: EMPTY, value: this, useNew: false},
+        	...还有各级平台的依赖。
+    },
+    scope:'platform'
 }
 
 Injector:抽象类
-INJECTOR:InjectionToken实例 =  {
+INJECTOR:InjectionToken<'INJECTOR'> =  {
     ngMetadataName : 'InjectionToken',
     _desc:'INJECTOR',
     ɵprov:undefined,
     __NG_ELEMENT_ID__:-1
     
 }
-scope属性是调用 recursivelyProcessProviders(records, providers)生成的;
 
 ****注
 在creaPlatform函数中 injector.get(token),解析token【tryResolveToken，最终调用resolveToken】
+
+`scope属性是 'platform'`
 ```
 
 ###### resolveToken
@@ -543,7 +616,7 @@ function resolveToken(
 ###### recursivelyProcessProviders
 
 ```javascript
-`递归处理提供的应用`
+`递归处理依赖`
 function recursivelyProcessProviders(records, provider) {
     if (provider) {
         provider = resolveForwardRef(provider); //provider是数组返回provider
@@ -597,11 +670,31 @@ function recursivelyProcessProviders(records, provider) {
 }
 
 **注
-解析 providers【2.*中的平台注入】，存放到records<provide,{}>中，
-records = {
+`调用 resolveProvider 函数，解析依赖`
+解析 providers【2.*中的平台依赖】，存放到records<provide,{}>中，
+records<Map> = {
     key(provide):value(
     	{ deps: [默认为空], fn: value=>value, useNew: [], value: false }
     )
+}
+关于providers中的参数:{
+    provide:作为 _records 中的key,如果是函数，将其设为fn,useNew为true;
+    deps:将deps中的依赖进行计算后放入新的deps中返回[{token:dep依赖，options:标记}]
+    
+    useValue: 如果有值，将返回的value设为此值
+    useFactory: 如果有值，将其设为fn
+    useExisting: 如果有值，fn设为(value)=>value
+    useClass: 如果有值，将其设为fn
+    
+    multi:将后续的依赖放到相同的第一个依赖的 deps 中
+}
+
+
+生成Map中的value：{
+    deps: [默认为空],
+    fn:   默认(value)=>value, 
+    useNew: 默认false, 
+    value: 默认[]
 }
 ```
 
@@ -613,15 +706,15 @@ records = {
     key:value
 }`
 `---------------------platformCore 的 provide 生成的record<Map>------------------`
-injectionToken('Platform ID') --->  {deps:[],value:'unknow',fn:IDENT, useNew:false}
-PlatformRef     --->  {deps:[{token:Injector,options:OptionFlags.Default}],value:EMPTY,fn:PlatformRef, useNew:true}
-TestabilityRegistry --->, {deps: [],fn:IDENT, useNew:false,value:[] }
-console --->, {deps: [],fn:IDENT, useNew:false,value:[] }
+injectionToken('Platform ID') -->  {deps:[],value:'unknow',fn:IDENT, useNew:false}
+PlatformRef  -->  {deps:[{token:Injector,options:OptionFlags.Default}],value:EMPTY,fn:PlatformRef, useNew:true}
+TestabilityRegistry -->, {deps: [],fn:IDENT, useNew:false,value:[] }
+console -->, {deps: [],fn:IDENT, useNew:false,value:[] }
 
 `--------------------platformCoreDynamic 的 provide--------------------`
 CompilerFactory --> {deps:[{token:COMPILER_OPTIONS,options:OptionFlags.Default}] ,value:EMPY, fn:JitCompilerFactory ,useNew:true} 
 COMPILER_OPTIONS  -->  {deps: [],token：COMPILER_OPTIONS,fn:MULTI_PROVIDER_FN, useNew:false,value:[] }
-CompilerFactory   -->  {deps:[{token:COMPILER_OPTIONS,options:OptionFlags.Default}],fn:JitCompilerFactory,useNew:true,value:[]}
+
     
 `----------------platformBrowserDynamic 的 provide---------------------`
 injectionToken('Platform ID') --->  {deps:[],value:'browser',fn:IDENT, useNew:false} 
@@ -854,16 +947,23 @@ options属性是为了标记在引用当前deps时，如何解析依赖，在 in
 
 ```typescript
 `这个injector是 StaticInjector 的实例`
-主要运行：resolveToken(PlatformRef, record, _record, Injector.NULL, '', InjectFlags.Default)
+injector.get(PlatformRef),走 StaticInjector的get函数【函数重载的get(PlatformRef),flag为 undefined】
 
-最终：return new PlatformRef(...dep)
+`_record 中 对应的 PlatformRef 记录`：
+PlatformRef  -->  {deps:[{token:Injector,options:OptionFlags.Default}],value:EMPTY,fn:PlatformRef,
+
+`经过 resolveToken 解析`:
+ PlatformRef 的依赖是 Injector，deps走 resolveToken 逻辑后返回的是 【StaticInjector实例】              
+deps = [<StaticInjector实例>]
+                   
+最终：return new PlatformRef(...dep)【走2.4】
 ```
 
 ##### 输出injector.get(CompilerFactory)
 
 ```typescript
 主要运行：resolveToken(CompilerFactory, record, _record, Injector.NULL, '', InjectFlags.Default)
-
+deps:[{COMPILER_OPTIONS}]
 最终 return new JitCompilerFactory(...deps)//参数是编译配置 _record 中的 COMPILER_OPTIONS
 ```
 

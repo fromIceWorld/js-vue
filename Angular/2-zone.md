@@ -27,12 +27,12 @@ class zone  {
 ##### zoneSpec
 
 ```
-【区域规范】
+【通过传递 zoneSpec 配置来控制 zone 的拦截操作。】
 interface ZoneSpec {
     name: string;                                 // 新生zone的名称
     properties?: { [key: string]: any };          // 传递共享的数据
   -------------------------------钩子函数---------------------  
-    onFork?: ( ... );                             
+    onFork?: ( ... );                          //在                     
     onIntercept?: ( ... );
     onInvoke?: ( ... );  //在进入zone时执行
     onHandleError?: ( ... );
@@ -46,8 +46,9 @@ interface ZoneSpec {
 ##### ZoneDelegate
 
 ```typescript
-【当前zone的代理】
-当调用 zone 的方法时，内部调用了 ZoneDelegate 的对应方法，
+`当前zone的代理，在new zone时产生对应代理_zoneDelegate，根据传入的配置(代理目标zone，父级代理，代理配置)生成对应的子代理`
+
+当调用 zone 的方法时，内部调用了  ZoneDelegate 的对应方法，
   fork[zone] -> fork[ZoneDelegate] -> 
       				_forkZS.onFork(this._forkDlgt!, this.zone, targetZone, zoneSpec) 
 			        new Zone(targetZone, zoneSpec)
@@ -118,13 +119,13 @@ class zone {
     }
 }
 
-通过设置_currentZoneFrame，进入当前zone，然后执行生命周期函数this._zoneDelegate.invoke，没有就直接运行callback。最后回到上级zone。
+通过设置_currentZoneFrame，进入当前zone，然后执行生命周期函数this._zoneDelegate.invoke，没有_invokeZS就直接运行callback。最后回到上级zone。
 ```
 
 #### 问题
 
 1. 异步任务之间维持zone
-2. 每次执行完成都会回复原来的zone【zone.run】
+2. 每次执行完成都会恢复原来的zone【zone.run】
 
 #### 相关文章
 
