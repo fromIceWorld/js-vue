@@ -2,6 +2,18 @@
 
 ------
 
+##### 函数
+
+```
+function a(name,age){}
+a.length:第一个【函数参数默认值】之前的参数的个数。 a.length == 2
+function a(name,age = 9){}: a.length == 1
+function a(name=2,age = 9){}: a.length == 0
+a.length 无法通过赋值修改。
+```
+
+
+
 ##### 原型，原型链，构造函数，实例
 
 ```javascript
