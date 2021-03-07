@@ -260,7 +260,7 @@ el.getAttribute(key);
 ```javascript
 commonJS:
 	0- 每一个文件就是一个模块，拥有自己独立的作用域，变量，以及方法.对其他的模块都不可见
-	1- module代表当前模块,它的exports是对外的接口。require加载的就是moddule.exports
+	1- module代表当前模块,它的exports是对外的接口。require加载的就是module.exports
 	2- 同步加载(缺点:浏览器等待);
 	3- 输出的是值的拷贝，后续模块内的变化就不会影响输出的值。
 	3- 模块可多次加载，但是只会在加载时运行一次，结果被缓存，后续加载会读取缓存结果，如果想再次加载，需清空缓存
