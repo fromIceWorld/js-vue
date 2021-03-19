@@ -1,5 +1,14 @@
 ## bootstrapModule
 
+用到的依赖：
+
+- _metadataResolver：
+- 
+
+
+
+
+
 bootstrapModule是引导模块，由第一步中返回的平台实例执行，传入的第一个参数是**AppModule**，是根模块。第二个参数初始化时未传入。
 
 ```typescript
@@ -174,7 +183,9 @@ class JitCompiler {
 #### 2.1-_loadModules(第一步)
 
 ```typescript
-`加载依赖模块，缓存依赖模块中的指令及摘要信息 到 CompileMetadataResolver实例 _metadataResolver `
+`加载依赖模块，缓存依赖模块中的指令及摘要信息到CompileMetadataResolver(_metadataResolver依赖)
+ 在加载模块环节会将依赖的模块，指令，摘要，管道...都缓存到《_metadataResolver》中;`
+
 @params mainModule:模块类class;
 @params isSync:加载方式[同步还是异步],同步加载;
 
@@ -720,8 +731,7 @@ private _createProxyClass(baseType: any, name: string): cpl.ProxyClass {
       // loaded.
         //返回 createComponentFactory函数 ，调用
         //new ComponentFactory_(selector, componentType, viewDefFactory, inputs, outputs, ngContentSelectors)
-      const createComponentFactory =
-          this._reflector.resolveExternalReference(Identifiers.createComponentFactory);
+      const createComponentFactory =this._reflector.resolveExternalReference(Identifiers.createComponentFactory);
       return createComponentFactory(selector, dirType, <any>hostView, inputs, outputs, []);
     }
   }
@@ -807,6 +817,8 @@ class ReflectionCapabilities{
 @params mainModule: 组件class
 @params allComponentFactories: null
 
+moduleByJitDirective<组件,模块>存储组件 ->所在模块 的映射
+    
 _compileComponents(mainModule: Type, allComponentFactories: object[]|null) {
     const ngModule = this._metadataResolver.getNgModuleMetadata(mainModule)!;
     const moduleByJitDirective = new Map<any, CompileNgModuleMetadata>();
@@ -1978,7 +1990,7 @@ class StyleCompiler{
           //解析组件中 styles 数据 放入 【styleExpressions】
     const styleExpressions: o.Expression[] =
         stylesheet.styles.map(plainStyle => o.literal(this._shimIfNeeded(plainStyle, shim)));
-          //解析 组件中 styleUrls 数据 保存在 dependencies中【？？？？】
+          //解析 组件中 styleUrls 数据 生成函数 保存在 dependencies中
     const dependencies: StylesCompileDependency[] = [];
     stylesheet.styleUrls.forEach((styleUrl) => {
       const exprIndex = styleExpressions.length;
